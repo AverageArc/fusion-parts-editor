@@ -66,6 +66,7 @@ if (proposalPath) {
 
 // the ledger library is plain JS with `export` keywords; inlined (no imports) so the page and the Node tools share one implementation
 const ledgerLib = readFileSync(join(here, 'ledger.mjs'), 'utf8').replace(/^export /gm, '');
+const groupsLib = readFileSync(join(here, 'groups.mjs'), 'utf8').replace(/^export /gm, '');
 // three.js: from a CDN by default, or inlined as data: modules (an import map points "three" and the add-ons at them)
 let imports = { 'three': 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js', 'three/addons/': 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/' };
 if (offline) {
@@ -79,6 +80,7 @@ if (offline) {
 const html = template
   .replace('__IMPORTMAP__', () => JSON.stringify({ imports }))
   .replace('__LEDGER_LIB__', () => ledgerLib.replace(/<\/script/gi, '<\\/script'))
+  .replace('__GROUPS_LIB__', () => groupsLib.replace(/<\/script/gi, '<\\/script'))
   .replace('__ASSEMBLY__', () => safe(JSON.stringify(assembly)))
   .replace('__PROPOSAL__', () => safe(JSON.stringify(proposal)))
   .replace('__GEO__', () => safe(JSON.stringify({ meshes: geo, pn: pos.length, pad, tn: idx.length, blob })));

@@ -10,13 +10,13 @@ const scripts = join(root, 'fusion-parts-editor', 'scripts');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /** Returns null (with a reason printed) when no browser or no three.js is available. */
-export async function openSamplePage({ width = 1400, height = 900 } = {}) {
+export async function openSamplePage({ width = 1400, height = 900, nested = false } = {}) {
   const exe = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Google/Chrome/Application/chrome.exe',
     '/usr/bin/google-chrome', '/usr/bin/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'].find(existsSync);
   if (!exe) { console.log('skipped: no Edge or Chrome found'); return null; }
   if (!existsSync(join(scripts, 'node_modules', 'three'))) { console.log('skipped: three.js is not installed (npm install three@0.160.0 --no-save, in fusion-parts-editor/scripts)'); return null; }
   const tmp = mkdtempSync(join(tmpdir(), 'fpe-page-')), sample = join(tmp, 'sample'), page = join(tmp, 'page.html');
-  execFileSync(process.execPath, [join(root, 'tools', 'make-sample.mjs'), sample], { stdio: 'pipe' });
+  execFileSync(process.execPath, [join(root, 'tools', 'make-sample.mjs'), sample, ...(nested ? ['--nested'] : [])], { stdio: 'pipe' });
   execFileSync(process.execPath, [join(scripts, 'build_editor.mjs'), sample, page, '--offline'], { stdio: 'pipe' });
   const port = 9300 + Math.floor(Math.random() * 500);
   const proc = spawn(exe, ['--headless=new', '--disable-gpu', '--no-first-run', '--allow-file-access-from-files', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', `--window-size=${width},${height}`,

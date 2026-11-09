@@ -72,6 +72,10 @@ button,select,input{font:inherit;color:inherit}
 .pname:disabled{opacity:.7}
 .badge{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:0 7px;color:var(--muted);white-space:nowrap}
 .badge.link{border-color:var(--warn);color:var(--warn)}
+button.badge{background:none;cursor:pointer;font:inherit;font-size:11px}
+button.badge:hover{border-color:var(--accent);color:var(--accent)}
+.part.inner{margin-left:18px;border-left:3px solid var(--line)}
+details.bodies>summary{cursor:pointer;color:var(--muted);font-size:12.5px;padding:3px 0}
 .mass{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .mass b{color:var(--warn)}
 .why{font-size:12px;color:var(--accent);margin:0 0 4px 26px}
@@ -141,6 +145,7 @@ details.review td.from{color:var(--muted);text-decoration:line-through}
         <option value="linked">Linked from other files</option><option value="hidden">Hidden in Fusion</option><option value="nomat">No material</option>
       </select>
       <select id="sort" aria-label="Sort parts"><option value="tree">Assembly order</option><option value="mass">Heaviest first</option><option value="name">Name A to Z</option><option value="count">Most copies first</option></select>
+      <label id="collapseLbl" title="A linked library file can hold many components and bodies. Collapsed, you see the library file itself and its name; the parts inside stay hidden (and out of the suggestions) unless you open them, search, or have edited them." hidden><input type="checkbox" id="collapse" checked> Collapse library contents</label>
       <label id="unlockLbl" title="These parts are links inside linked files, so their source file is not known. Editing them changes another file, so they are locked unless you unlock them."><input type="checkbox" id="unlock"> Unlock nested links</label>
     </div>
     <div class="bulk" id="bulk" hidden>
@@ -180,6 +185,8 @@ const G = __GEO__;
 const PROPOSAL = __PROPOSAL__;   // answers file with suggested edits, or null
 /* the ledger library (scripts/ledger.mjs), inlined by the builder so the page and the Node tools read and write the same format */
 __LEDGER_LIB__
+/* the library grouping (scripts/groups.mjs): which parts sit inside a linked library file */
+__GROUPS_LIB__
 // what Claude suggested, by "part|scope|field", so each ledger row can say whether the owner kept, changed or added it
 const PV = new Map();
 for (const e of (PROPOSAL?.edits || [])) {
@@ -321,7 +328,13 @@ const partMass = pid => { let o = 0, n = 0; byId[pid].bodies.forEach((_, k) => {
 /* ---------- rows ---------- */
 let sel = new Set(), hover = null;
 const rowsEl = $('#rows');
+/* Library contents: the parts inside a linked library file are folded into the library part's own row. They come back when you open
+   the group, search, or when they carry an edit or a suggestion, so nothing you changed is ever hidden. */
+const GR = libraryGroups(A); let collapse = Object.keys(GR.topOf).length > 0; const openGroups = new Set();
+const hiddenByCollapse = p => collapse && !!GR.topOf[p.id] && !openGroups.has(GR.topOf[p.id]) && !$('#q').value.trim() && !partChanged(p.id) && !R[p.id] && !sel.has(p.id);
+const hiddenCount = () => collapse ? parts.filter(hiddenByCollapse).length : 0;
 function matches(p) {
+  if (hiddenByCollapse(p)) return false;
   const q = $('#q').value.trim().toLowerCase(), f = $('#filter').value;
   if (q) { const hay = [curName(p.id), p.name, p.paths[0] || '', ...p.bodies.flatMap((b, k) => [cur(p.id, k, 'name'), cur(p.id, k, 'material'), cur(p.id, k, 'appearance')])].join(' ').toLowerCase(); if (!hay.includes(q)) return false; }
   if (f === 'changed') return partChanged(p.id);
@@ -359,14 +372,20 @@ function rowHtml(p) {
       <div class="f"><span>Custom color</span><div class="colrow"><input type="color" data-f="customColor" value="${col || b.color || '#b9bcc4'}" ${lk ? 'disabled' : ''}><button class="btn small" data-clr ${col ? '' : 'hidden'} title="Remove the custom color">×</button></div></div>
     </div>`;
   }).join('');
-  return `<article class="part ${ch ? 'changed' : ''} ${sel.has(pid) ? 'sel' : ''}" data-pid="${pid}">
+  const kidN = GR.stats[pid], inside = GR.topOf[pid] && collapse;
+  // a library part with several bodies shows one summary line; the per-body fields open on demand (or when something in them was edited)
+  const fold = collapse && libName && p.bodies.length > 1;
+  const mats = [...new Set(p.bodies.map((_, k) => cur(pid, k, 'material') || '(none)'))];
+  const bodiesBlock = fold ? `<details class="bodies" ${ch || sel.has(pid) ? 'open' : ''}><summary>${p.bodies.length} bodies · ${esc(mats.slice(0, 3).join(', '))}${mats.length > 3 ? ' +' + (mats.length - 3) + ' more' : ''}</summary>${bodies}</details>` : bodies;
+  const grp = kidN && collapse ? `<button class="badge" data-grp="${pid}" title="Components and bodies inside this library file. They are folded away so you can focus on the library part itself.">${kidN.parts} part${kidN.parts === 1 ? '' : 's'}${kidN.bodies ? ', ' + kidN.bodies + ' bod' + (kidN.bodies === 1 ? 'y' : 'ies') : ''} inside · ${openGroups.has(pid) ? 'hide' : 'show'}</button>` : '';
+  return `<article class="part ${ch ? 'changed' : ''} ${sel.has(pid) ? 'sel' : ''} ${inside ? 'inner' : ''}" data-pid="${pid}">
     <div class="ph"><input type="checkbox" class="pick" ${sel.has(pid) ? 'checked' : ''} aria-label="Tick ${esc(nameOrig)}">
       <input class="pname" data-pname value="${esc(nameVal)}" ${nameDisabled ? 'disabled' : ''} title="${p.kind === 'root' ? 'Body name' : libName ? `Renames the library file "${p.source.file}" (${p.source.project} / ${p.source.folder}) in every design that uses it` : p.referenced ? 'This linked part\'s source file is not known, so it cannot be renamed from here' : 'Component name (renames every copy)'}" aria-label="Name">
-      <span class="badge">×${p.instances}</span>${p.kind === 'root' ? '<span class="badge">body</span>' : ''}${libName ? '<span class="badge link" title="This part is a library file. Its name, material, appearance and body names are edited in that file, so they change in every design that uses it.">library file</span>' : p.referenced ? '<span class="badge link" title="Lives in another Fusion file">linked</span>' : ''}${p.viaLinked && p.viaLinked.length && !p.referenced ? `<span class="badge link" title="This part sits inside the linked file ${esc(p.viaLinked.join(' > '))}, so editing it changes that library file.">in ${esc(p.viaLinked[p.viaLinked.length - 1])}</span>` : ''}${hiddenN ? `<span class="badge">${hiddenN === p.instances ? 'hidden' : hiddenN + ' hidden'}</span>` : ''}
+      <span class="badge">×${p.instances}</span>${grp}${p.kind === 'root' ? '<span class="badge">body</span>' : ''}${libName ? '<span class="badge link" title="This part is a library file. Its name, material, appearance and body names are edited in that file, so they change in every design that uses it.">library file</span>' : p.referenced ? '<span class="badge link" title="Lives in another Fusion file">linked</span>' : ''}${p.viaLinked && p.viaLinked.length && !p.referenced ? `<span class="badge link" title="This part sits inside the linked file ${esc(p.viaLinked.join(' > '))}, so editing it changes that library file.">in ${esc(p.viaLinked[p.viaLinked.length - 1])}</span>` : ''}${hiddenN ? `<span class="badge">${hiddenN === p.instances ? 'hidden' : hiddenN + ' hidden'}</span>` : ''}
       <span class="mass">${massTxt}</span><button class="btn small" data-revert ${ch ? '' : 'hidden'} title="Throw away every edit on this part">Revert</button></div>
     ${R[pid] ? `<div class="why"><b>${ledgerRows().some(r => r.part === pid && r.origin === 'suggested') || !ch ? 'Suggested:' : 'Suggested, but you changed it:'}</b> ${esc(R[pid])}</div>` : ''}
     <div class="ppath" title="${esc(p.paths.join('\n'))}">${esc(p.paths[0] || '(top level)')}${p.paths.length > 1 ? ` + ${p.paths.length - 1} more` : ''}${p.source ? ` · library file in ${esc(p.source.project)} / ${esc(p.source.folder)} (v${esc(p.source.version)})` : ''}</div>
-    ${bodies || `<div class="body"><span class="mass">${p.source ? 'A library file, listed without opening it. Only its name can change here (a rename applies in every design that uses it).' : 'An assembly container with no bodies of its own. Only its name can change.'}</span></div>`}
+    ${bodiesBlock || `<div class="body"><span class="mass">${p.source ? 'A library file, listed without opening it. Only its name can change here (a rename applies in every design that uses it).' : 'An assembly container with no bodies of its own. Only its name can change.'}</span></div>`}
   </article>`;
 }
 function renderRows() {
@@ -377,7 +396,7 @@ function renderRows() {
 function renderSummary() {
   const n = changedParts().length, nb = parts.reduce((a, p) => a + p.bodies.length, 0), linked = parts.filter(p => p.referenced).length;
   const edits = Object.values(E).reduce((a, e) => a + Object.keys(e).length, 0);
-  $('#pills').innerHTML = `<span class="pill">${parts.length} parts</span><span class="pill">${nb} bodies</span><span class="pill">${A.instances.length} placed copies</span>${linked ? `<span class="pill">${linked} linked</span>` : ''}<span class="pill ${edits ? 'on' : ''}">${edits} edit${edits === 1 ? '' : 's'} in ${n} part${n === 1 ? '' : 's'}</span>`;
+  $('#pills').innerHTML = `<span class="pill">${parts.length} parts</span><span class="pill">${nb} bodies</span><span class="pill">${A.instances.length} placed copies</span>${linked ? `<span class="pill">${linked} linked</span>` : ''}${hiddenCount() ? `<span class="pill" title="Parts inside linked library files, folded into their library part. Untick Collapse library contents to list them.">${hiddenCount()} folded inside library files</span>` : ''}<span class="pill ${edits ? 'on' : ''}">${edits} edit${edits === 1 ? '' : 's'} in ${n} part${n === 1 ? '' : 's'}</span>`;
   const sug = Object.keys(R).length; $('#note').hidden = !sug;
   if (sug) { const kept = Object.keys(R).filter(pid => partChanged(pid)).length; $('#note').textContent = `Claude suggested edits for ${sug} part${sug === 1 ? '' : 's'}, each with a reason. ${kept} still in place. Change any of them, or press Revert on a part to drop it, then click Copy answers.`; }
   const sc = sel.size; $('#bulk').hidden = !sc; $('#bulkCount').textContent = sc + ' ticked';
@@ -436,6 +455,7 @@ rowsEl.addEventListener('change', e => {
 });
 rowsEl.addEventListener('click', e => {
   const art = e.target.closest('.part'); if (!art) return; const pid = art.dataset.pid;
+  if (e.target.closest('[data-grp]')) { const g = e.target.closest('[data-grp]').dataset.grp; openGroups.has(g) ? openGroups.delete(g) : openGroups.add(g); renderRows(); return; }
   if (e.target.matches('.pick')) { e.target.checked ? sel.add(pid) : sel.delete(pid); art.classList.toggle('sel', sel.has(pid)); renderSummary(); refreshScene(); return; }
   if (e.target.matches('[data-revert]')) { delete E[pid]; byId[pid].bodies.forEach((_, k) => delete E[bk(pid, k)]); delete R[pid]; save(); saveR(); renderRows(); return; }
   if (e.target.matches('[data-clr]')) { const k = +e.target.closest('.body').dataset.k; setBody(pid, k, 'customColor', null); updateRow(pid); art.querySelector(`.body[data-k="${k}"] input[type=color]`).value = byId[pid].bodies[k].color || '#b9bcc4'; return; }
@@ -444,6 +464,8 @@ rowsEl.addEventListener('mouseover', e => { const art = e.target.closest('.part'
 rowsEl.addEventListener('mouseleave', () => { hover = null; refreshScene(); });
 ['q', 'filter', 'sort'].forEach(id => $('#' + id).addEventListener('input', renderRows));
 $('#unlock').addEventListener('change', e => { unlocked = e.target.checked; renderRows(); });
+$('#collapse').addEventListener('change', e => { collapse = e.target.checked; renderRows(); });
+$('#collapseLbl').hidden = !Object.keys(GR.topOf).length;   // only offered when some parts sit inside linked library files
 $('#unlockLbl').hidden = !parts.some(p => p.referenced && !p.source);   // only needed when the assembly has links inside linked files
 
 /* ---------- scene highlighting ---------- */
@@ -474,6 +496,7 @@ cvs.addEventListener('pointerup', e => {
   if (!down || e.button !== 0) { down = null; return; } const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = performance.now() - down.t; down = null; if (moved > 5 || dt > 500) return;
   const pid = pick(e); if (!pid) { if (!e.shiftKey) { sel.clear(); renderRows(); } return; }
   if (e.shiftKey || e.ctrlKey || e.metaKey) { sel.has(pid) ? sel.delete(pid) : sel.add(pid); } else { sel = new Set([pid]); }
+  if (GR.topOf[pid] && collapse) openGroups.add(GR.topOf[pid]);   // clicking a part inside a collapsed library file opens that file
   if ($('#filter').value !== 'all' && !matches(byId[pid])) { $('#filter').value = 'all'; }
   renderRows(); const el = rowsEl.querySelector(`[data-pid="${pid}"]`); if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1100); }
 });

@@ -133,7 +133,20 @@ try {
 } catch { console.log('skip  offline build (three.js not installed in fusion-parts-editor/scripts)'); }
 const setup = run('check_setup.mjs', join(tmp, 'work'));
 check(setup.includes('Node side is ready'), 'check_setup.mjs passes on a good install');
+// library contents: parts inside a linked library file are grouped under it by occurrence path, and the audit folds them
+const nest = join(tmp, 'nested'); execFileSync(process.execPath, [join(root, 'tools', 'make-sample.mjs'), nest, '--nested'], { stdio: 'pipe' });
+const { libraryGroups } = await import(pathToFileURL(join(scripts, 'groups.mjs')).href);
+const NA = JSON.parse(readFileSync(join(nest, 'assembly.json'), 'utf8'));
+const gr = libraryGroups(NA), servoId = NA.parts.find(p => p.name === 'Micro servo').id;
+check(gr.kids[servoId]?.length === 3 && Object.keys(gr.topOf).length === 3 && gr.stats[servoId].parts === 3 && gr.stats[servoId].bodies === 2, 'the three parts inside a library file are grouped under it (found by occurrence path)');
+check(Object.keys(libraryGroups(A).topOf).length === 0, 'an assembly with nothing inside library files has no groups');
+const foldedAudit = run('audit.mjs', nest), fullAudit = run('audit.mjs', nest, '--all');
+check(!/"Gear 2"/.test(foldedAudit) && /folded: 3 parts, 2 bodies inside/.test(foldedAudit) && /3 parts inside library files are folded/.test(foldedAudit), 'the audit folds library contents into the library part');
+check(/"Gear 2"/.test(fullAudit) && /IN_LINKED_FILE/.test(fullAudit), 'audit --all lists them again');
+const massLine = s => s.split('\n').find(l => /g\s+total/.test(l));
+check(massLine(foldedAudit) === massLine(fullAudit), 'folding changes what is listed, never the mass totals');
 // the built page carries the ledger library and no placeholder
 check(html.includes('function parseLedger') && html.includes('function expandLedger') && !html.includes('__LEDGER_LIB__') && !html.includes('export function'), 'the page carries the ledger library, inlined without export keywords');
+check(html.includes('function libraryGroups') && !html.includes('__GROUPS_LIB__'), 'the page carries the library grouping');
 console.log(failed ? failed + ' check(s) failed' : 'all checks passed');
 process.exit(failed ? 1 : 0);

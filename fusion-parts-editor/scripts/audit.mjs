@@ -1,5 +1,6 @@
 // Print a compact audit of a Fusion export, so a proposal can be written without reading the whole assembly.json.
-//   node audit.mjs <export_dir>
+//   node audit.mjs <export_dir> [--all]
+// Parts inside a linked library file are folded into the library part (and a library part with several bodies is one line); --all lists everything.
 // It lists every part (id, copies, linked, names, material, appearance, mass) and flags likely problems:
 //   DEFAULT_NAME, PART_NUMBER_NAME, NO_MATERIAL, AIR, GENERIC_MATERIAL, MAT_APP_MISMATCH, NAME_MAT_MISMATCH, CUSTOM_APPEARANCE,
 //   SAME_NAME_OTHER_MATERIAL, INCONSISTENT_NAME (the same name written two ways), FASTENER_ODD_MATERIAL (a screw, washer or nut whose
@@ -9,9 +10,15 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const dir = process.argv[2];
-if (!dir) { console.error('usage: node audit.mjs <export_dir>'); process.exit(1); }
+import { libraryGroups } from './groups.mjs';
+
+const args = process.argv.slice(2), showAll = args.includes('--all'), dir = args.find(a => !a.startsWith('--'));
+if (!dir) { console.error('usage: node audit.mjs <export_dir> [--all]'); process.exit(1); }
 const A = JSON.parse(readFileSync(join(dir, 'assembly.json'), 'utf8'));
+// Parts inside a linked library file are folded into the library part's own entry (the same grouping the page uses), so the audit, and the
+// suggestions made from it, stay on the library part itself. --all lists them too. Totals always count everything.
+const GR = libraryGroups(A);
+const folded = p => !showAll && !!GR.topOf[p.id];
 const libApp = new Set(A.libraries.appearances.map(a => a.name));
 
 const FAMILIES = {
@@ -44,7 +51,8 @@ const topFast = [...fastMats.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 
 let total = 0;
 const matMass = {};
-console.log(`${A.document.name}: ${A.parts.length} parts, ${A.parts.filter(p => p.referenced).length} linked, up axis ${A.upAxis}\n`);
+const nFolded = A.parts.filter(folded).length;
+console.log(`${A.document.name}: ${A.parts.length} parts, ${A.parts.filter(p => p.referenced).length} linked, up axis ${A.upAxis}${nFolded ? `; ${nFolded} parts inside library files are folded into their library part (add --all to list them)` : ''}\n`);
 for (const p of A.parts) {
   const flags = [];
   if (p.referenced) flags.push('LINKED');
@@ -68,7 +76,14 @@ for (const p of A.parts) {
   if (isFastener(p.name) && fastMats.size > 1 && p.bodies.some(b => (b.material || '(none)') !== topFast)) flags.push('FASTENER_ODD_MATERIAL');
   if (p.kind === 'component' && new Set(p.bodies.map(b => b.name)).size < p.bodies.length) flags.push('DUPLICATE_BODY_NAMES');
   if (p.viaLinked && p.viaLinked.length) flags.push('IN_LINKED_FILE');
-  console.log(`${p.id}  ${p.kind}${p.instances > 1 ? ' x' + p.instances : ''}  "${p.name}"${flags.length ? '   [' + [...new Set(flags)].join(' ') + ']' : ''}`);
+  if (folded(p)) continue;   // its mass is counted above; it is not listed or flagged on its own
+  const inside = GR.stats[p.id];
+  console.log(`${p.id}  ${p.kind}${p.instances > 1 ? ' x' + p.instances : ''}  "${p.name}"${flags.length ? '   [' + [...new Set(flags)].join(' ') + ']' : ''}${inside && !showAll ? `   (folded: ${inside.parts} part${inside.parts === 1 ? '' : 's'}, ${inside.bodies} bod${inside.bodies === 1 ? 'y' : 'ies'} inside)` : ''}`);
+  if (!showAll && p.referenced && p.source && p.bodies.length > 1) {   // a multi-body library part: one line; --all shows each body
+    const mats = [...new Set(p.bodies.map(b => b.material ?? '(none)'))];
+    console.log(`      ${p.bodies.length} bodies | ${mats.join('; ')} | ${p.bodies.reduce((a, b) => a + b.massG, 0).toFixed(3)} g in all (--all lists each body)`);
+    continue;
+  }
   p.bodies.forEach((b, k) => console.log(`      body ${k} "${b.name}" | ${b.material ?? '(none)'} | ${b.appearance ?? '(none)'}${b.color ? ' ' + b.color : ''} | ${b.massG} g | bbox ${(b.bboxMm[3] - b.bboxMm[0]).toFixed(1)} x ${(b.bboxMm[4] - b.bboxMm[1]).toFixed(1)} x ${(b.bboxMm[5] - b.bboxMm[2]).toFixed(1)} mm`));
 }
 if (fastMats.size) console.log('\nFastener materials (copies): ' + [...fastMats.entries()].sort((a, b) => b[1] - a[1]).map(([m, n]) => `${m} ${n}`).join(', '));

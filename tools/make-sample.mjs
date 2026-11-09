@@ -1,11 +1,11 @@
 // Writes a small made-up assembly in the same format the Fusion export script produces, so the editor page can be tried (and tested) without Fusion.
-//   node tools/make-sample.mjs [out_dir]  writes assembly.json and meshes.json (default: examples/sample-export)
+//   node tools/make-sample.mjs [out_dir] [--nested]  writes assembly.json and meshes.json (default: examples/sample-export)
 // The assembly is "Demo bracket": two plates with default names, a bracket (2 copies), 4 screws that count as "linked" parts (to show the lock), and 4 washers.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const out = process.argv[2] ? resolve(process.argv[2]) : join(resolve(fileURLToPath(new URL('..', import.meta.url))), 'examples', 'sample-export');
+const out = process.argv[2] && !process.argv[2].startsWith('--') ? resolve(process.argv[2]) : join(resolve(fileURLToPath(new URL('..', import.meta.url))), 'examples', 'sample-export');
 mkdirSync(out, { recursive: true });
 
 const box = (w, d, h) => {   // centered on the origin; x = width, y = depth, z = height
@@ -61,6 +61,17 @@ screw.source = { fileId: 'urn:adsk.wipprod:dm.lineage:SAMPLEFILEID0000000000', f
 const washer = addPart({ kind: 'component', name: 'M3 WASHER', paths: [0, 1, 2, 3].map(i => 'M3 WASHER:' + (i + 1)), bodies: [{ name: 'Body1', mesh: cyl(3.2, 0.5, 20, 1.6), material: 'Steel', appearance: 'Steel - Satin' }] });
 [[-24, -6], [24, -6], [-24, 6], [24, 6]].forEach(([x, y], i) => { place(screw, screwPaths[i], [x, y, 14]); place(washer, 'M3 WASHER:' + (i + 1), [x, y, 10.25]); });
 
+// --nested adds a linked library file "Micro servo" that holds three components of its own (one is an empty container), the way a real
+// servo or collar file does, so the folding of library contents can be tested. The default sample (and examples/) is unchanged.
+if (process.argv.includes('--nested')) {
+  const servo = addPart({ kind: 'component', name: 'Micro servo', referenced: true, paths: ['Micro servo:1'], bodies: [{ name: 'Body1', mesh: box(12, 23, 22), material: 'ABS Plastic', appearance: 'ABS Plastic (White)' }, { name: 'Body2', mesh: box(12, 5, 3), material: 'Aluminum 6061', appearance: 'Aluminum - Satin' }] });
+  servo.source = { fileId: 'urn:adsk.wipprod:dm.lineage:SAMPLESERVO00000000000', file: 'Micro servo', version: 1, folder: 'Electronics', project: 'Demo library' };
+  place(servo, 'Micro servo:1', [0, 30, 10]);
+  const kid = (name, mesh, material, appearance, at) => { const p = addPart({ kind: 'component', name, paths: ['Micro servo:1+' + name + ':1'], bodies: mesh ? [{ name: 'Body1', mesh, material, appearance }] : [] }); p.viaLinked = ['Micro servo']; if (mesh) place(p, p.paths[0], at); return p; };
+  kid('Component5', cyl(4, 2, 16), 'Steel', 'Steel - Satin', [0, 30, 22]);
+  kid('Gear 2', cyl(3, 2, 16), 'Brass', 'Brass - Polished', [0, 30, 25]);
+  kid('Wiring', null);
+}
 const assembly = { format: 'fusion-assembly-export/2', document: { name: 'Demo bracket' }, exportedAt: '2026-01-01T00:00:00', units: 'mm', upAxis: 'Z', transformMaxErrorMm: 0, parts, instances, libraries: { materials, appearances } };
 writeFileSync(join(out, 'assembly.json'), JSON.stringify(assembly));
 writeFileSync(join(out, 'meshes.json'), JSON.stringify(meshes));

@@ -36,6 +36,33 @@ try {
   check(r.button === 'Copied ✓' || r.button === 'Copy answers', 'the button says "Copy answers"');
   check(/^Your answers: 3 changes in 3 parts$/.test(r.afterRevert), 'Revert on a part takes its rows out (' + r.afterRevert + ')');
   check(b.errors.length === 0, 'no JavaScript errors' + (b.errors.length ? ': ' + b.errors[0] : ''));
+  check(await b.evalJs('document.querySelector("#collapseLbl").hidden') === true, 'no "Collapse library contents" switch when nothing sits inside a library file');
+  b.close(); b = null;
+
+  // a library file that holds components of its own: folded into one row
+  b = await openSamplePage({ nested: true });
+  const n = async () => b.evalJs('document.querySelectorAll(".part").length');
+  check(await n() === 6, 'folded: the library file is one row and the three parts inside it are hidden (' + await n() + ' rows)');
+  const g = await b.evalJs(`(() => { const a = document.querySelector('.part [data-grp]'); return { text: a && a.textContent, folded: document.querySelector('.bodies > summary')?.textContent, pill: document.querySelector('#pills').textContent }; })()`);
+  check(/3 parts, 2 bodies inside · show/.test(g.text || ''), 'the library row says what is inside (' + g.text + ')');
+  check(/2 bodies · /.test(g.folded || '') && /3 folded inside library files/.test(g.pill), 'its bodies fold into one line, and the header counts the folded parts');
+  await b.evalJs(`document.querySelector('[data-grp]').click()`);
+  check(await n() === 9, 'opening the group lists the parts inside it');
+  await b.evalJs(`document.querySelector('[data-grp]').click()`);
+  const r2 = await b.evalJs(`(async () => {
+    const set = (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+    const q = document.querySelector('#q'); q.value = 'Gear 2'; q.dispatchEvent(new Event('input', { bubbles: true }));
+    const found = document.querySelectorAll('.part').length;
+    set(document.querySelector('.part [data-pname]'), 'Gear B');
+    q.value = ''; q.dispatchEvent(new Event('input', { bubbles: true }));
+    const after = [...document.querySelectorAll('.part [data-pname]')].map(i => i.value);
+    document.querySelector('#collapse').click();
+    const unfolded = document.querySelectorAll('.part').length, bodiesFold = document.querySelectorAll('.bodies').length;
+    return { found, after, unfolded, bodiesFold }; })()`);
+  check(r2.found === 1, 'searching finds a part inside a folded library file');
+  check(r2.after.includes('Gear B') && r2.after.length === 7, 'a part you edited stays visible after the search is cleared (' + r2.after.length + ' rows)');
+  check(r2.unfolded === 9 && r2.bodiesFold === 0, 'unticking the switch lists everything again, with every body open');
+  check(b.errors.length === 0, 'no JavaScript errors with a folded library file' + (b.errors.length ? ': ' + b.errors[0] : ''));
 } catch (e) { console.log('FAIL  ' + e.message); failed++; }
 finally { b?.close(); }
 console.log(failed ? failed + ' check(s) failed' : 'all page checks passed');

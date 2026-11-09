@@ -57,6 +57,7 @@ Things to know:
 Do this by default, so the owner reviews a proposal instead of typing every name. Skip it only if the user says they want a blank scratchpad.
 
 1. Run `node <SKILL_DIR>/scripts/audit.mjs "<WORK_DIR>/export"`. It lists every part (id, copies, linked, bodies, material, appearance, mass) with hint flags: `DEFAULT_NAME`, `PART_NUMBER_NAME`, `NO_MATERIAL`, `AIR`, `GENERIC_MATERIAL`, `MAT_APP_MISMATCH`, `NAME_MAT_MISMATCH`, `CUSTOM_APPEARANCE`, `SAME_NAME_OTHER_MATERIAL`, `INCONSISTENT_NAME` (one name written two ways), `FASTENER_ODD_MATERIAL`, `DUPLICATE_BODY_NAMES`, `EMPTY_CONTAINER`, `LINKED`, `IN_LINKED_FILE`. The flags are hints to judge, not verdicts (a red steel part may be red on purpose).
+   **Library contents are folded.** A linked library file can hold many components and bodies of its own (a servo, a collar, a linear guide). The audit lists the library part itself, with "(folded: N parts, M bodies inside)", and one line for its bodies; the parts inside are neither listed nor flagged, and mass totals still count them. The owner cares about the library part's name, so suggest on that, and do not rename or recolor what is inside a library file unless the owner asks (then run the audit with `--all` to see it). The page folds the same way (the switch **Collapse library contents**, on by default, with a "show" button per library part), and always shows an inside part that carries an edit or a suggestion.
 2. Write `<WORK_DIR>/proposal.spec.json` with only the edits you can justify (format at the top of `scripts/make_proposal.mjs`, example in `examples/proposal.spec.example.json`). Each edit gets a one-sentence `reason` that the owner will read next to the part.
    - Material and appearance names must come from the export's `libraries` lists (search `assembly.json`); `make_proposal.mjs` reports names it cannot find.
    - Use what the model tells you: the part name, size (`bboxMm`), mass, copy count and how it is used. Do not invent facts. When a choice is a guess, begin the reason with "Guess:". Where several answers are plausible (for example the grade of a steel), pick the most likely and say so.
@@ -80,6 +81,7 @@ It prints the file size. About 150,000 triangles gives roughly 1.5 MB. Files ove
 
 Tell the user, briefly, what the page does:
 - 3D view on the left. Click a part to tick it, hover to see its name.
+- Library files that hold components of their own show as one row ("3 parts, 2 bodies inside · show"); a library part with several bodies shows one summary line. The switch **Collapse library contents** (on by default, only offered when it applies) brings everything back.
 - Table on the right: rename the component, rename each body, set material and appearance (type to search the libraries), pick a custom color. Edited fields turn amber, and the mass updates when the material changes.
 - Search, filters ("Default names", "Linked", "Changed"...), and sorting. Tick several parts for bulk actions: set a material, appearance or color, find and replace in names, add a prefix or suffix.
 - With a proposal, the suggested edits are already filled in (amber), each with its reason and a **Revert** button, and the filter **Suggested by Claude** lists them. The owner keeps, changes or reverts each one. **Load answers…** loads saved answers (a ledger) or any answers file later.
@@ -171,7 +173,8 @@ Offer the next step: the exported data (`assembly.json`) is the input for buildi
 ## Files
 
 - `scripts/fusion_export.py`: Fusion script, read-only. Writes `assembly.json` and `meshes.json`.
-- `scripts/audit.mjs`: Node. Prints a compact audit of the export with problem flags.
+- `scripts/audit.mjs`: Node. Prints a compact audit of the export with problem flags (`--all` also lists parts inside library files).
+- `scripts/groups.mjs`: which parts sit inside which linked library file (by occurrence path). The page inlines it, and the audit uses it.
 - `scripts/make_proposal.mjs`: Node. Turns a short proposal spec into a full answers file for the page.
 - `scripts/build_editor.mjs`: Node. Builds `parts-editor.html` from the export, optionally with a proposal pre-loaded.
 - `scripts/ledger.mjs`: the ledger format (write, read, expand against an export). The page inlines it, so page and tools agree.
