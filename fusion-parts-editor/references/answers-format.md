@@ -1,6 +1,6 @@
 # Answers format
 
-What `fusion_apply.py` reads. Only changed things are included. The page's **Copy ledger** now produces the shorter text ledger (`references/ledger-format.md`); `scripts/expand_ledger.mjs` turns that into this file using the export. Older ledgers in this JSON form still apply as they are. A proposal file for the page (`make_proposal.mjs`) has this shape too.
+What `fusion_apply.py` reads. Only changed things are included. The page's **Copy answers** now produces the shorter text ledger (`references/ledger-format.md`); `scripts/expand_ledger.mjs` turns that into this file using the export. Older ledgers in this JSON form still apply as they are. A proposal file for the page (`make_proposal.mjs`) has this shape too.
 
 ```json
 {

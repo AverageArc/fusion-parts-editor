@@ -60,8 +60,6 @@ def custom_appearance(design, base, hex_color):
 
 def run(_context: str):
     app = adsk.core.Application.get()
-    design = adsk.fusion.Design.cast(app.activeProduct)
-    root = design.rootComponent
     answers = PARAMS.get('answers')
     if answers is None:
         with open(PARAMS['answers_path'], encoding='utf-8') as fh:
@@ -69,13 +67,19 @@ def run(_context: str):
     dry = bool(PARAMS.get('dry_run', True))
     allow_linked = bool(PARAMS.get('allow_linked', False)) and bool(answers.get('allowLinked', False))
     allow_source = bool(PARAMS.get('allow_source_rename', False)) and bool(answers.get('allowSourceRename', False))
-
-    if answers.get('document') != app.activeDocument.name:
-        print('WARNING: these answers were made for "%s" but the active document is "%s".' % (answers.get('document'), app.activeDocument.name))
+    library_mode = answers.get('mode') == 'library'   # answers made from fusion_library.py: only library-file renames, no open design needed
 
     occ_by_path = {}
-    for o in root.allOccurrences:
-        occ_by_path[o.fullPathName] = o
+    root = None
+    if library_mode:
+        print('LIBRARY MODE: only library-file renames are applied; no design is edited.')
+    else:
+        design = adsk.fusion.Design.cast(app.activeProduct)
+        root = design.rootComponent
+        if answers.get('document') != app.activeDocument.name:
+            print('WARNING: these answers were made for "%s" but the active document is "%s".' % (answers.get('document'), app.activeDocument.name))
+        for o in root.allOccurrences:
+            occ_by_path[o.fullPathName] = o
 
     counts = {'ok': 0, 'already': 0, 'blocked': 0, 'conflict': 0, 'missing': 0, 'failed': 0}
     lines = []
@@ -111,6 +115,8 @@ def run(_context: str):
                     note('conflict', who, 'a file named "%s" already exists in %s/%s; skipped' % (rs['to'], df.parentProject.name, df.parentFolder.name))
                 else:
                     source_work.append((who, df, rs, len(e.get('paths', []))))
+        if library_mode:
+            continue      # nothing but the file rename above applies to a library listing
         if e.get('linked') and not allow_linked:
             if e.get('rename') or e.get('bodies'):
                 note('blocked', who, 'lives in another document (linked). Not touched. Re-run with allow_linked after the user confirms.')
@@ -221,7 +227,7 @@ def run(_context: str):
         except Exception as ex:
             note('failed', who, 'rename library file -> "%s": %s' % (rs['to'], str(ex).strip().splitlines()[-1][:120]))
 
-    print(('DRY RUN (nothing was changed)' if dry else 'APPLIED (not saved)') + ' for "%s"' % app.activeDocument.name)
+    print(('DRY RUN (nothing was changed)' if dry else 'APPLIED (not saved)') + ' for "%s"' % (answers.get('document') if library_mode else app.activeDocument.name))
     for ln in lines:
         print(ln)
     print('SUMMARY ' + json.dumps(counts))

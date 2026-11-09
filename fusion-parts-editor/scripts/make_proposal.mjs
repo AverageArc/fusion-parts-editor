@@ -59,12 +59,12 @@ for (const s of spec.edits || []) {
   edits.push(e);
 }
 
-const out = { format: 'fusion-parts-answers/1', document: A.document.name, exportedAt: A.exportedAt, allowLinked: edits.some(e => e.linked && e.bodies), allowSourceRename: edits.some(e => e.renameSource), edits };
+const out = { format: 'fusion-parts-answers/1', document: A.document.name, exportedAt: A.exportedAt, allowLinked: edits.some(e => e.linked && e.bodies), allowSourceRename: edits.some(e => e.renameSource), edits, ...(A.mode ? { mode: A.mode } : {}) };
 writeFileSync(outPath, JSON.stringify(out, null, 1));
 const linked = edits.filter(e => e.linked).length;
 const files = edits.filter(e => e.renameSource).length;
 const n = edits.reduce((a, e) => a + (e.rename || e.renameSource ? 1 : 0) + (e.bodies || []).reduce((x, b) => x + Object.keys(b.set).length, 0), 0);
 console.log(`wrote ${outPath}: ${n} change${n === 1 ? '' : 's'} in ${edits.length} part${edits.length === 1 ? '' : 's'} (${linked} linked: library parts are edited in their source file for every design that uses it)`);
-if (files) console.log(`${files} of them rename a library file, which renames that part in every design that uses it; the apply step lists each file and needs the owner's yes.`);
+if (files) console.log(`${files} of them rename a library file, which renames that part in every design that uses it; the owner sees them marked in the page, and the dry run lists each file.`);
 for (const m of problems) console.log('PROBLEM ' + m);
 if (problems.length) process.exitCode = 2;

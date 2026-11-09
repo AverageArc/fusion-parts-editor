@@ -1,6 +1,6 @@
 # The ledger (`fusion-parts-ledger/2`)
 
-What **Copy ledger** puts on the clipboard, what the owner pastes back, and what `verify_ledger.mjs` writes as an undo ledger. One row per change, short enough to read by eye, exact enough to apply.
+What **Copy answers** puts on the clipboard (the page calls it "your answers"; the format is a ledger), what the owner pastes back, and what `verify_ledger.mjs` writes as an undo ledger. One row per change, short enough to read by eye, exact enough to apply.
 
 ```
 # fusion-parts-ledger/2
@@ -29,6 +29,6 @@ Lines starting with `#` other than the two header lines are comments. Blank line
 
 - `node scripts/expand_ledger.mjs <export_dir> <ledger.txt> <answers.json>` checks it against the export and writes the answers file the apply script reads (`references/answers-format.md`). It reports `PROBLEM` (stop; nothing written), `HELD` (rows left out, with the closest library names) and `WARN` (duplicate names, edits inside linked files).
 - `node scripts/verify_ledger.mjs <before> <after> <ledger.txt> --undo undo.txt --receipt receipt.txt` after applying and re-exporting. Each row is `DONE`, `STALE` or `NOT DONE`; side effects are listed; the undo ledger is a normal ledger made against the **after** export that restores every changed value (side effects included). It is applied like any other ledger.
-- The page can load a saved ledger with **Load ledger…**.
+- The page can load a saved ledger with **Load answers…**.
 
 `scripts/ledger.mjs` has no imports: the page builder inlines it, so the page and the tools read and write the same format.

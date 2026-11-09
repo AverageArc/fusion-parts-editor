@@ -156,17 +156,17 @@ details.review td.from{color:var(--muted);text-decoration:line-through}
       <button class="btn small" id="bulkAll">Tick all shown</button>
     </div>
     <div id="rows"></div>
-    <details class="review" id="review" open><summary id="reviewSum">Ledger</summary><div id="changes"></div></details>
+    <details class="review" id="review" open><summary id="reviewSum">Your answers</summary><div id="changes"></div></details>
     <div class="answers">
-      <button class="btn primary" id="copy">Copy ledger</button>
+      <button class="btn primary" id="copy">Copy answers</button>
       <button class="btn" id="download">Download .txt</button>
-      <label class="btn" title="Load a saved ledger, or an answers file with edits Claude suggested">Load ledger…<input type="file" id="load" accept=".txt,.json,text/plain,application/json" hidden></label>
+      <label class="btn" title="Load saved answers, or an answers file with edits Claude suggested">Load answers…<input type="file" id="load" accept=".txt,.json,text/plain,application/json" hidden></label>
       <button class="btn" id="reset">Reset all</button>
-      <p>Nothing here changes Fusion. The ledger above lists every change. Click <b>Copy ledger</b> and paste it to Claude: pasting it is your go-ahead. Claude checks it against the open model (a dry run), applies every line, then re-exports to confirm each change and lists anything else that moved. It stops only for lines that no longer match the model. Library-file renames change every design that uses the file.</p>
+      <p>Nothing here changes Fusion. Your answers above list every change. Click <b>Copy answers</b> and paste it to Claude: pasting it is your go-ahead. Claude checks it against the open model (a dry run), applies every line, then re-exports to confirm each change and lists anything else that moved. It stops only for lines that no longer match the model. Library-file renames change every design that uses the file.</p>
     </div>
   </section>
 </div>
-<div class="modal" id="modal" hidden><div><p>Select all, copy, and paste the ledger into the chat:</p><textarea id="modalText" readonly></textarea><p><button class="btn" id="modalClose">Close</button></p></div></div>
+<div class="modal" id="modal" hidden><div><p>Select all, copy, and paste the answers into the chat:</p><textarea id="modalText" readonly></textarea><p><button class="btn" id="modalClose">Close</button></p></div></div>
 <datalist id="dl-mat"></datalist><datalist id="dl-app"></datalist>
 
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
@@ -263,6 +263,7 @@ function expandLedger(L, A) {
   const edits = new Map();
   const edit = p => { if (!edits.has(p.id)) edits.set(p.id, { part: p.id, kind: p.kind, linked: p.referenced, paths: p.paths.slice(0, 400), partName: p.name, rename: null, renameSource: null, bodies: new Map() }); return edits.get(p.id); };
   const finalName = new Map();   // "p3:0" -> the body name after the ledger, to spot duplicates
+  const matRows = new Map(), appRows = new Set();   // material changes, and bodies whose appearance or color the ledger also sets
   for (const r of L.rows) {
     const p = byId[r.part], tag = 'row ' + r.n + ' (' + r.part + (p ? ' "' + p.name + '"' : '') + ' ' + scopeLabel(r) + ' ' + r.field + ')';
     if (!p) { problems.push('row ' + r.n + ': this export has no part ' + r.part); continue; }
@@ -298,8 +299,15 @@ function expandLedger(L, A) {
       bd.set[field] = field === 'customColor' ? r.to.toLowerCase() : r.to;
       if (field !== 'customColor') bd.was[field] = b[field] ?? null;
       if (field === 'name') finalName.set(p.id + ':' + r.body, r.to);
+      if (field === 'material') matRows.set(p.id + ':' + r.body, p.id + ' "' + p.name + '"');
+      if (field === 'appearance' || field === 'customColor') appRows.add(p.id + ':' + r.body);
     }
   }
+  // a new material usually pulls in its own appearance (seen on a real apply: "Aluminum - Satin" became "Stainless Steel - Satin", and one
+  // part got "Surface - Matte"). Say so once, so an appearance that matters can be pinned with its own row.
+  const loose = [...matRows.entries()].filter(([k]) => !appRows.has(k)).map(([, v]) => v);
+  if (loose.length) warnings.push(loose.length + ' material change' + (loose.length === 1 ? '' : 's') + ' without an appearance row (' + [...new Set(loose)].slice(0, 6).join(', ') + (loose.length > 6 ? ', …' : '')
+    + '): Fusion usually switches the appearance to the new material\'s own default, so the look may change. Add an appearance row to keep or choose it.');
   // duplicate body names: Fusion keeps names unique inside one component (and among top-level bodies) by adding " (1)" to the later one
   // Only groups that include a body this ledger renames are reported, so old duplicates the owner did not touch stay quiet.
   const scopes = new Map();   // scope key -> name -> [{ label, renamed }]
@@ -310,7 +318,7 @@ function expandLedger(L, A) {
     m.get(nm).push({ label: p.id + (p.kind === 'root' ? '' : ' body ' + k) + ' "' + b.name + '"', renamed });
   });
   for (const [key, m] of scopes) for (const [nm, who] of m) if (who.length > 1 && who.some(w => w.renamed))
-    warnings.push('the name "' + nm + '" would be used ' + who.length + ' times (' + who.map(w => w.label).join(', ') + ') ' + (key === 'top level' ? 'among top-level bodies' : 'inside one component') + '; Fusion renames the later ones to "' + nm + ' (1)"');
+    warnings.push('the name "' + nm + '" would be used ' + who.length + ' times (' + who.map(w => w.label).join(', ') + ') ' + (key === 'top level' ? 'among top-level bodies' : 'inside one component') + '; Fusion renames the later ones to "' + nm + ' (1)". Give each its own name, for example "' + nm + ' 1" and "' + nm + ' 2".');
   for (const e of edits.values()) { const p = byId[e.part]; if (p.viaLinked && p.viaLinked.length && !p.referenced) warnings.push(e.part + ' "' + p.name + '" lives inside the linked file' + (p.viaLinked.length > 1 ? 's ' : ' ') + p.viaLinked.map(x => '"' + x + '"').join(', ') + '; editing it changes that library file too'); }
   const list = [...edits.values()].filter(e => e.rename || e.renameSource || e.bodies.size).map(e => {
     const o = { part: e.part, kind: e.kind, linked: e.linked, paths: e.paths, partName: e.partName };
@@ -321,6 +329,7 @@ function expandLedger(L, A) {
   });
   const answers = { format: 'fusion-parts-answers/1', document: A.document.name, exportedAt: A.exportedAt,
     allowLinked: list.some(e => e.linked && e.bodies), allowSourceRename: list.some(e => e.renameSource), edits: list };
+  if (A.mode) answers.mode = A.mode;   // "library": made from a folder listing, so the apply script renames files without an open design
   return { answers, problems, held, warnings };
 }
 
@@ -516,7 +525,7 @@ function rowHtml(p) {
       <span class="mass">${massTxt}</span><button class="btn small" data-revert ${ch ? '' : 'hidden'} title="Throw away every edit on this part">Revert</button></div>
     ${R[pid] ? `<div class="why"><b>${ledgerRows().some(r => r.part === pid && r.origin === 'suggested') || !ch ? 'Suggested:' : 'Suggested, but you changed it:'}</b> ${esc(R[pid])}</div>` : ''}
     <div class="ppath" title="${esc(p.paths.join('\n'))}">${esc(p.paths[0] || '(top level)')}${p.paths.length > 1 ? ` + ${p.paths.length - 1} more` : ''}${p.source ? ` · library file in ${esc(p.source.project)} / ${esc(p.source.folder)} (v${esc(p.source.version)})` : ''}</div>
-    ${bodies || '<div class="body"><span class="mass">An assembly container with no bodies of its own. Only its name can change.</span></div>'}
+    ${bodies || `<div class="body"><span class="mass">${p.source ? 'A library file, listed without opening it. Only its name can change here (a rename applies in every design that uses it).' : 'An assembly container with no bodies of its own. Only its name can change.'}</span></div>`}
   </article>`;
 }
 function renderRows() {
@@ -529,14 +538,14 @@ function renderSummary() {
   const edits = Object.values(E).reduce((a, e) => a + Object.keys(e).length, 0);
   $('#pills').innerHTML = `<span class="pill">${parts.length} parts</span><span class="pill">${nb} bodies</span><span class="pill">${A.instances.length} placed copies</span>${linked ? `<span class="pill">${linked} linked</span>` : ''}<span class="pill ${edits ? 'on' : ''}">${edits} edit${edits === 1 ? '' : 's'} in ${n} part${n === 1 ? '' : 's'}</span>`;
   const sug = Object.keys(R).length; $('#note').hidden = !sug;
-  if (sug) { const kept = Object.keys(R).filter(pid => partChanged(pid)).length; $('#note').textContent = `Claude suggested edits for ${sug} part${sug === 1 ? '' : 's'}, each with a reason. ${kept} still in place. Change any of them, or press Revert on a part to drop it, then click Copy ledger.`; }
+  if (sug) { const kept = Object.keys(R).filter(pid => partChanged(pid)).length; $('#note').textContent = `Claude suggested edits for ${sug} part${sug === 1 ? '' : 's'}, each with a reason. ${kept} still in place. Change any of them, or press Revert on a part to drop it, then click Copy answers.`; }
   const sc = sel.size; $('#bulk').hidden = !sc; $('#bulkCount').textContent = sc + ' ticked';
-  $('#reviewSum').textContent = `Ledger: ${edits} change${edits === 1 ? '' : 's'} in ${n} part${n === 1 ? '' : 's'}`;
+  $('#reviewSum').textContent = `Your answers: ${edits} change${edits === 1 ? '' : 's'} in ${n} part${n === 1 ? '' : 's'}`;
   const held = changedParts().filter(p => locked(p)), rows = ledgerRows(), chk = checkLedger(rows);
-  const heldNote = held.length ? `<p class="empty">${held.length} suggested edit${held.length === 1 ? ' is' : 's are'} on locked nested links and not in the ledger: ${esc(held.map(p => p.name).join(', '))}. Tick "Unlock nested links" to include ${held.length === 1 ? 'it' : 'them'}.</p>` : '';
+  const heldNote = held.length ? `<p class="empty">${held.length} suggested edit${held.length === 1 ? ' is' : 's are'} on locked nested links and not in your answers: ${esc(held.map(p => p.name).join(', '))}. Tick "Unlock nested links" to include ${held.length === 1 ? 'it' : 'them'}.</p>` : '';
   const flags = chk.problems.map(x => `<p class="warn"><b>Cannot apply:</b> ${esc(x)}</p>`).concat(chk.held.map(h => `<p class="warn"><b>Will be held back:</b> ${esc(h.what)}: ${esc(h.why)}${h.suggestions.length ? '. Closest in Fusion: ' + h.suggestions.map(s => '“' + esc(s) + '”').join(', ') : ''}</p>`), chk.warnings.map(w => `<p class="warn"><b>Check:</b> ${esc(w)}</p>`)).join('');
   const pn = id => esc(byId[id].kind === 'root' ? byId[id].bodies[0].name : byId[id].name);
-  $('#changes').innerHTML = flags + (rows.length ? `<table>${rows.map((r, i) => `<tr><td>${i + 1}</td><td>${pn(r.part)}${r.scope === 'file' || (r.where && /^(library|inside)/.test(r.where)) ? ' <span class="badge link">library</span>' : ''}</td><td>${esc(scopeLabel(r))} ${r.field}</td><td class="from">${esc(r.from || '(none)')}</td><td>${esc(r.to || '(none)')}</td><td class="from">${esc(r.origin)}</td></tr>`).join('')}</table>` : '<p class="empty">No changes yet.</p>') + heldNote;
+  $('#changes').innerHTML = flags + (rows.length ? `<table>${rows.map((r, i) => `<tr><td>${i + 1}</td><td>${pn(r.part)}${r.scope === 'file' || (r.where && /^(library|inside)/.test(r.where)) ? ' <span class="badge link">library</span>' : ''}</td><td>${esc(scopeLabel(r))} ${r.field}</td><td class="from">${esc(r.from || '(none)')}</td><td>${esc(r.to || '(none)')}</td><td>${esc(r.origin)}</td></tr>`).join('')}</table>` : '<p class="empty">No changes yet.</p>') + heldNote;
 }
 /* The ledger: one row per change, in the same format Claude reads back (scripts/ledger.mjs). The review table, the copied text and the checks all come from these rows. */
 const originOf = (key, to) => !PV.has(key) ? 'owner' : PV.get(key) === to ? 'suggested' : 'suggested, changed';
@@ -662,17 +671,17 @@ $('#bulkGo').onclick = () => {
 // Before the ledger leaves the page, anything that will not apply as written is shown once and the owner decides.
 function confirmLedger(rows) {
   const c = checkLedger(rows), msgs = c.problems.map(x => 'Cannot apply: ' + x).concat(c.held.map(h => 'Held back: ' + h.what + ': ' + h.why + (h.suggestions.length ? ' (closest: ' + h.suggestions.join(', ') + ')' : '')), c.warnings.map(w => 'Check: ' + w));
-  return !msgs.length || confirm(msgs.slice(0, 8).join('\n\n') + (msgs.length > 8 ? '\n\n…and ' + (msgs.length - 8) + ' more (listed under the ledger).' : '') + '\n\nCopy the ledger anyway?');
+  return !msgs.length || confirm(msgs.slice(0, 8).join('\n\n') + (msgs.length > 8 ? '\n\n…and ' + (msgs.length - 8) + ' more (listed under your answers).' : '') + '\n\nCopy the answers anyway?');
 }
 $('#copy').onclick = async () => {
   const rows = ledgerRows(); if (!rows.length) { alert('There are no changes yet.'); return; } if (!confirmLedger(rows)) return;
   const j = ledgerText(rows);
-  try { await navigator.clipboard.writeText(j); $('#copy').textContent = 'Copied ✓'; setTimeout(() => $('#copy').textContent = 'Copy ledger', 1800); }
+  try { await navigator.clipboard.writeText(j); $('#copy').textContent = 'Copied ✓'; setTimeout(() => $('#copy').textContent = 'Copy answers', 1800); }
   catch { $('#modalText').value = j; $('#modal').hidden = false; $('#modalText').select(); }
 };
 $('#modalClose').onclick = () => $('#modal').hidden = true;
 $('#download').onclick = () => { const rows = ledgerRows(); if (!rows.length) { alert('There are no changes yet.'); return; } if (!confirmLedger(rows)) return;
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([ledgerText(rows)], { type: 'text/plain' })); a.download = 'parts-ledger.txt'; a.click(); };
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([ledgerText(rows)], { type: 'text/plain' })); a.download = 'parts-answers.txt'; a.click(); };
 $('#reset').onclick = () => { if (!Object.keys(E).length || confirm('Throw away all your edits?')) { E = {}; R = {}; sel.clear(); save(); saveR(); renderRows(); } };
 
 /* load an answers file (suggested edits from Claude, or a saved copy of your own) into the page */
@@ -697,11 +706,11 @@ $('#load').addEventListener('change', async ev => {
   const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
   const txt = await f.text(); let a;
   if (/^\s*#\s*fusion-parts-ledger\//.test(txt)) {   // a ledger saved from this page: read it back through the same expander Claude uses
-    try { const x = expandLedger(parseLedger(txt), A); if (x.problems.length) { alert('That ledger does not fit this page:\n' + x.problems.slice(0, 5).join('\n')); return; } a = x.answers; } catch (e) { alert('That ledger cannot be read: ' + e.message); return; }
+    try { const x = expandLedger(parseLedger(txt), A); if (x.problems.length) { alert('Those answers do not fit this page:\n' + x.problems.slice(0, 5).join('\n')); return; } a = x.answers; } catch (e) { alert('Those answers cannot be read: ' + e.message); return; }
   } else {
-    try { a = JSON.parse(txt); } catch { alert('That file is neither a ledger nor valid JSON.'); return; }
+    try { a = JSON.parse(txt); } catch { alert('That file is neither saved answers nor valid JSON.'); return; }
   }
-  if (!String(a.format || '').startsWith('fusion-parts-answers/') || !Array.isArray(a.edits)) { alert('That is not a ledger or answers file.'); return; }
+  if (!String(a.format || '').startsWith('fusion-parts-answers/') || !Array.isArray(a.edits)) { alert('That is not an answers file.'); return; }
   if (a.document !== A.document.name && !confirm(`This file is for "${a.document}", but this page is for "${A.document.name}". Load it anyway?`)) return;
   const r = loadAnswers(a);
   alert(`Loaded edits for ${r.parts_n} part${r.parts_n === 1 ? '' : 's'}.` + (r.skipped.length ? `\nSkipped ${r.skipped.length} that no longer match this export: ${r.skipped.slice(0, 5).join(', ')}${r.skipped.length > 5 ? '…' : ''}` : ''));

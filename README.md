@@ -2,7 +2,7 @@
 
 A [Claude](https://claude.ai) skill for cleaning up the parts of a Fusion 360 assembly. It exports the assembly you have open, gives you a visual scratchpad where you rename parts and change materials, appearances and colors in bulk, then takes your answers and writes the changes back to the open Fusion design.
 
-![The parts editor page showing a small demo assembly with three renamed parts, a locked linked part, and a 3D view](docs/editor-screenshot.jpg)
+![The parts editor page showing a small demo assembly with edited parts, a library part being renamed, the answers table and a 3D view](docs/editor-screenshot.jpg)
 
 *The scratchpad, on the made-up demo assembly in `examples/`. Edited fields turn amber, and the screws that live in another Fusion document are marked as library parts.*
 
@@ -11,7 +11,7 @@ A [Claude](https://claude.ai) skill for cleaning up the parts of a Fusion 360 as
 - **Exports** every part of the open assembly (names, bodies, materials, appearances, colors, masses, 3D shapes, how many copies are placed) without changing anything in Fusion.
 - **Builds one HTML page** with a rotatable 3D view and an editable parts table. Rename components and bodies, pick materials and appearances from your Fusion libraries, choose custom colors, and edit many parts at once (set a material, find and replace in names, add a prefix or suffix). Search, filter ("Default names", "Linked", "Changed") and sort.
 - **Suggests edits first.** Claude audits the export (default names, part-number names, generic or missing materials, a material that disagrees with its appearance, the same name under different materials) and pre-fills the page with proposed names, materials and appearances, each with a one-line reason. You keep, change or revert each one instead of typing everything. Library parts (linked from other files) are suggested too.
-- **Applies your ledger.** The page keeps a ledger of every change you make. You click *Copy ledger* and paste it into the chat. Pasting it is your go-ahead: Claude checks it against the live model (a dry run), applies every line without asking about each one, then exports again and checks every line against the result, listing anything else that changed on its own and writing an undo ledger. The ledger is plain text, one row per change (`6  p5  body 0  material  "Aluminum 6061" -> "Aluminum 5052"  [owner]`), and the page warns before you copy it about material names Fusion does not have and duplicate body names. It stops only for lines that no longer match the model. It never saves the document, and tells you which open documents are left unsaved.
+- **Applies your ledger.** The page keeps a ledger of every change you make. You click *Copy answers* and paste it into the chat. Pasting it is your go-ahead: Claude checks it against the live model (a dry run), applies every line without asking about each one, then exports again and checks every line against the result, listing anything else that changed on its own and writing an undo ledger. The ledger is plain text, one row per change (`6  p5  body 0  material  "Aluminum 6061" -> "Aluminum 5052"  [owner]`), and the page warns before you copy it about material names Fusion does not have and duplicate body names. It stops only for lines that no longer match the model. It never saves the document, and tells you which open documents are left unsaved.
 
 - **Optional: shapes from the STEP file.** By default the 3D view uses Fusion's own mesh of each body. With the STEP option, the design is exported as a STEP file and the shapes come from its exact surfaces (read with OpenCascade), matched back to Fusion's parts by center of mass and volume. Edits are not affected: they are written back by part path.
 
@@ -26,7 +26,7 @@ Fusion (open assembly)
 assembly.json + meshes.json
    │  build_editor.mjs  (Node)
    ▼
-parts-editor.html  ──  you edit in your browser  ──►  "Copy ledger" (text)
+parts-editor.html  ──  you edit in your browser  ──►  "Copy answers" (text)
                                                           │  paste into the chat
                                                           ▼
 Fusion (open assembly)  ◄──  fusion_apply.py: dry run, then apply  ◄──  Claude
@@ -67,7 +67,7 @@ Open an assembly in Fusion and tell Claude something like:
 - "Make me a scratchpad to rename the parts and fix the materials."
 - "Clean up the Body1 / Component3 names in my Fusion design."
 
-Claude exports the model, audits it, summarizes what it would change and why, tells you where the page is, and waits. Edit in the page, click **Copy ledger**, and paste it back. Claude does a dry run, applies every line, and re-exports to check; it reports what changed and anything it skipped and why.
+Claude exports the model, audits it, summarizes what it would change and why, tells you where the page is, and waits. Edit in the page, click **Copy answers**, and paste them back. Claude does a dry run, applies every line, and re-exports to check; it reports what changed and anything it skipped and why.
 
 ## Try it without Fusion
 
@@ -83,7 +83,7 @@ Then open `examples/sample-export/parts-editor.html` in a browser. (A pre-built 
 ## Safety
 
 - The export is read-only. Applying always starts with a dry run that changes nothing and lists each edit as `OK`, `ALREADY`, `BLOCKED`, `CONFLICT`, `MISSING` or `FAILED`.
-- **The document is never saved.** Changes live in the open design; Ctrl+Z or closing without saving discards them.
+- **Nothing is saved unless you say so.** Changes live in the open designs; Ctrl+Z or closing without saving discards them. After applying, Claude lists the documents left unsaved and offers once to save exactly the ones you agree to (each save is a new version in Fusion's history).
 - **Library parts change the library.** Parts linked from another Fusion document accept edits in Fusion's API without any warning, and the edits land in the other file. The page marks them "library file" and keeps them editable, and the ledger lists the edits so you see what you are changing for every design that uses the file. Material, appearance and body-name edits only become permanent in the library when you save that source file in Fusion; the skill never saves. Links inside linked files, whose source is unknown, stay locked until you unlock them.
 - **Renaming a library part renames its library file.** A linked part's name is its source file's name, so typing a new name for it in the page (badge "library file") renames that file, and with it the part in every design that uses it. The apply script lists each file and blocks the rename until you agree. Use it to bring a whole parts library to your naming convention one assembly at a time.
 - **Conflicts are detected.** If a material or appearance changed in Fusion after the export, that field is skipped and reported.
@@ -104,7 +104,7 @@ Then open `examples/sample-export/parts-editor.html` in a browser. (A pre-built 
 |---|---|
 | `fusion-parts-editor/` | The skill itself. This is the folder to install. |
 | `fusion-parts-editor/SKILL.md` | What Claude follows: the workflow, the safety rules, the Fusion gotchas. |
-| `fusion-parts-editor/scripts/` | `fusion_export.py` and `fusion_apply.py` (run inside Fusion), `audit.mjs` (flags problems in an export), `make_proposal.mjs` (turns Claude's short spec into suggested edits), `build_editor.mjs` (builds the page), `step_geometry.mjs` and `package.json` (the optional STEP shapes). |
+| `fusion-parts-editor/scripts/` | Run inside Fusion: `fusion_export.py`, `fusion_apply.py`, `fusion_save.py` (opt-in, named documents only) and `fusion_library.py` (lists a folder of library files so a whole library can be renamed). Run in Node: `audit.mjs` (flags problems), `make_proposal.mjs` (Claude's suggestions), `build_editor.mjs` (the page; `--offline` needs no internet), `ledger.mjs`, `expand_ledger.mjs` and `verify_ledger.mjs` (read the answers, check the result), `check_setup.mjs`, and `step_geometry.mjs` (the optional STEP shapes). |
 | `fusion-parts-editor/assets/` | `parts-editor.template.html`, the page. |
 | `fusion-parts-editor/references/` | The ledger and answers formats, and notes on Fusion API behavior found while building this. |
 | `examples/sample-export/` | A made-up assembly in export format, plus a built page. |

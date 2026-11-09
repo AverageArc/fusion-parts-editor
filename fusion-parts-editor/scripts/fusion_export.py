@@ -208,7 +208,21 @@ def run(_context: str):
         step_path = os.path.join(out_dir, 'assembly.step')
         em = design.exportManager
         em.execute(em.createSTEPExportOptions(step_path, design.rootComponent))   # a file write; the design is not changed
-    meta = {'format': 'fusion-assembly-export/2', 'document': {'name': doc.name}, 'geometry': 'mesh' if do_mesh else 'pending-step', 'stepFile': 'assembly.step' if step_path else None,
+    # self-check: the export must account for every occurrence and every linked occurrence Fusion reports, and the summed body mass
+    # should be near Fusion's own mass for the design (it can differ when hidden bodies or unusual materials are involved: info, not a failure)
+    occ_total = root.allOccurrences.count
+    occ_linked = sum(1 for o in root.allOccurrences if o.isReferencedComponent)
+    exp_occ = sum(p['instances'] for p in parts if p['kind'] == 'component')
+    exp_linked = sum(p['instances'] for p in parts if p['referenced'])
+    mass_sum = sum(b['massG'] * p['instances'] for p in parts for b in p['bodies'])
+    try:
+        mass_fusion = root.physicalProperties.mass * 1000
+    except Exception:
+        mass_fusion = None
+    checks = {'occurrences': {'fusion': occ_total, 'export': exp_occ}, 'linkedOccurrences': {'fusion': occ_linked, 'export': exp_linked},
+              'massG': {'fusion': round(mass_fusion, 2) if mass_fusion is not None else None, 'export': round(mass_sum, 2)}}
+    checks['ok'] = occ_total == exp_occ and occ_linked == exp_linked
+    meta = {'format': 'fusion-assembly-export/2', 'document': {'name': doc.name}, 'checks': checks, 'geometry': 'mesh' if do_mesh else 'pending-step', 'stepFile': 'assembly.step' if step_path else None,
             'exportedAt': datetime.datetime.now().isoformat(timespec='seconds'), 'units': 'mm', 'upAxis': up_axis,
             'transformMaxErrorMm': round(worst, 4), 'parts': parts, 'instances': instances,
             'libraries': {'materials': mats, 'appearances': apps}}
@@ -222,6 +236,9 @@ def run(_context: str):
     with_src = sum(1 for p in parts if p.get('source'))
     print('exported "%s": %d parts (%d linked), %d bodies, %d instances, %d triangles, %.1fs' % (doc.name, len(parts), linked, nb, len(instances), tris, time.time() - t0))
     print('placement check: worst error %.4f mm | up axis %s | %d materials, %d appearances' % (worst, up_axis, len(mats), len(apps)))
+    print('self-check: %s | occurrences %d of %d, linked %d of %d | mass %.1f g in the export vs %s g from Fusion' % (
+        'OK' if checks['ok'] else 'MISMATCH, do not trust this export until explained', exp_occ, occ_total, exp_linked, occ_linked, mass_sum,
+        ('%.1f' % mass_fusion) if mass_fusion is not None else 'n/a'))
     if linked:
         print('linked parts: %d, of which %d have a known source file (the rest are links inside linked files)' % (linked, with_src))
     if step_path:

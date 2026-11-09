@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "test": "node tools/smoke-test.mjs",
+    "test:page": "node tools/page-test.mjs",
     "sample": "node tools/make-sample.mjs && node fusion-parts-editor/scripts/build_editor.mjs examples/sample-export examples/sample-export/parts-editor.html",
     "install-skill": "node tools/install.mjs"
   },

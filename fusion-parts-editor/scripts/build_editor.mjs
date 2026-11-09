@@ -1,7 +1,8 @@
 // Build the parts-editor page from a Fusion export.
-//   node build_editor.mjs <export_dir> [output.html]
+//   node build_editor.mjs <export_dir> [output.html] [--proposal answers.json] [--offline]
 // Reads <export_dir>/assembly.json and meshes.json (written by fusion_export.py) and writes one self-contained HTML file
-// (default: <export_dir>/parts-editor.html). The only network use is loading three.js from a CDN when the page is opened.
+// (default: <export_dir>/parts-editor.html). The only network use is loading three.js from a CDN when the page is opened,
+// unless --offline inlines it (about 0.9 MB more).
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { dirname, join, resolve } from 'node:path';
@@ -11,8 +12,10 @@ import { fileURLToPath } from 'node:url';
 const args = process.argv.slice(2);
 const pi = args.indexOf('--proposal');
 const proposalPath = pi >= 0 ? args.splice(pi, 2)[1] : null;
+// optional: --offline puts three.js inside the page so it opens with no network (needs: npm install three@0.160.0 --no-save, in this folder)
+const oi = args.indexOf('--offline'); const offline = oi >= 0; if (offline) args.splice(oi, 1);
 const dir = args[0];
-if (!dir || (pi >= 0 && !proposalPath)) { console.error('usage: node build_editor.mjs <export_dir> [output.html] [--proposal answers.json]'); process.exit(1); }
+if (!dir || (pi >= 0 && !proposalPath)) { console.error('usage: node build_editor.mjs <export_dir> [output.html] [--proposal answers.json] [--offline]'); process.exit(1); }
 const out = args[1] || join(dir, 'parts-editor.html');
 const here = dirname(fileURLToPath(import.meta.url));
 const template = readFileSync(join(here, '..', 'assets', 'parts-editor.template.html'), 'utf8');
@@ -63,7 +66,18 @@ if (proposalPath) {
 
 // the ledger library is plain JS with `export` keywords; inlined (no imports) so the page and the Node tools share one implementation
 const ledgerLib = readFileSync(join(here, 'ledger.mjs'), 'utf8').replace(/^export /gm, '');
+// three.js: from a CDN by default, or inlined as data: modules (an import map points "three" and the add-ons at them)
+let imports = { 'three': 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js', 'three/addons/': 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/' };
+if (offline) {
+  const root = join(here, 'node_modules', 'three');
+  if (!existsSync(join(root, 'build', 'three.module.min.js'))) { console.error('--offline needs three.js: run "npm install three@0.160.0 --no-save" in ' + here); process.exit(1); }
+  const mod = p => 'data:text/javascript;base64,' + readFileSync(join(root, p)).toString('base64');
+  imports = { 'three': mod('build/three.module.min.js'),
+    'three/addons/controls/OrbitControls.js': mod('examples/jsm/controls/OrbitControls.js'),
+    'three/addons/environments/RoomEnvironment.js': mod('examples/jsm/environments/RoomEnvironment.js') };
+}
 const html = template
+  .replace('__IMPORTMAP__', () => JSON.stringify({ imports }))
   .replace('__LEDGER_LIB__', () => ledgerLib.replace(/<\/script/gi, '<\\/script'))
   .replace('__ASSEMBLY__', () => safe(JSON.stringify(assembly)))
   .replace('__PROPOSAL__', () => safe(JSON.stringify(proposal)))

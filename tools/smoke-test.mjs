@@ -104,6 +104,35 @@ check(undo.exportedAt === A.exportedAt && undo.rows.some(r => r.field === 'appea
 zp.name = 'Plate (unchanged)'; writeFileSync(join(after, 'assembly.json'), JSON.stringify(Z));
 let notDone = false; try { run('verify_ledger.mjs', sample, after, lp); } catch (e) { notDone = e.status === 2; }
 check(notDone, 'verify exits with a failure when a ledger row did not happen');
+// a material change without an appearance row warns once; with one it stays quiet
+check(x.warnings.some(w => /material change.*without an appearance row/.test(w)), 'a material change with no appearance row gets one warning about the appearance');
+const withApp = expandLedger({ ...back, rows: [...back.rows, { n: 9, part: screw.id, scope: 'body', body: 0, field: 'appearance', from: screw.bodies[0].appearance, to: 'Stainless Steel - Satin', origin: 'owner', where: '' }] }, A);
+check(!withApp.warnings.some(w => /without an appearance row/.test(w)), 'no appearance warning when the ledger sets the appearance too');
+// new audit flags, on a copy of the sample with a fastener in the wrong material and one name written two ways
+const aud = join(tmp, 'audit-export'); mkdirSync(aud);
+const AA = JSON.parse(JSON.stringify(A));
+const w1 = AA.parts.find(p => p.name === 'M3 WASHER'); w1.name = 'M3 Washer'; AA.parts.push({ ...JSON.parse(JSON.stringify(w1)), id: 'p99', name: 'M3-washer', bodies: w1.bodies.map(b => ({ ...b, material: 'Aluminum 6061' })) });
+writeFileSync(join(aud, 'assembly.json'), JSON.stringify(AA)); writeFileSync(join(aud, 'meshes.json'), '{}');
+const audOut = run('audit.mjs', aud);
+check(/INCONSISTENT_NAME/.test(audOut) && /FASTENER_ODD_MATERIAL/.test(audOut) && /Fastener materials/.test(audOut), 'the audit flags one name written two ways and a fastener in an odd material');
+// library mode: a folder listing (no bodies, no meshes) goes through the same page, ledger and expander
+const lib = join(tmp, 'library'); mkdirSync(lib);
+const LB = { format: 'fusion-assembly-export/2', mode: 'library', document: { name: 'Library: Demo / Fasteners' }, exportedAt: '2026-01-02T00:00:00', units: 'mm', upAxis: 'Z', transformMaxErrorMm: 0, instances: [], libraries: { materials: [], appearances: [] },
+  parts: [0, 1].map(i => ({ id: 'p' + i, kind: 'component', name: i ? 'Screw M4' : 'M3 SCREW', referenced: true, paths: [], instances: 1, bodies: [], source: { fileId: 'urn:test:' + i, file: i ? 'Screw M4' : 'M3 SCREW', version: 1, folder: 'Fasteners', project: 'Demo' } })) };
+writeFileSync(join(lib, 'assembly.json'), JSON.stringify(LB)); writeFileSync(join(lib, 'meshes.json'), '{}');
+run('build_editor.mjs', lib, join(lib, 'p.html'));
+check(readFileSync(join(lib, 'p.html'), 'utf8').includes('A library file, listed without opening it'), 'a library listing builds a page');
+const llp = join(lib, 'ledger.txt'); writeFileSync(llp, formatLedger({ doc: LB.document.name, exportedAt: LB.exportedAt, rows: [{ part: 'p0', scope: 'file', field: 'name', from: 'M3 SCREW', to: 'M3 screw', origin: 'owner', where: 'Demo/Fasteners' }] }));
+run('expand_ledger.mjs', lib, llp, join(lib, 'answers.json'));
+const la = JSON.parse(readFileSync(join(lib, 'answers.json'), 'utf8'));
+check(la.mode === 'library' && la.allowSourceRename === true && la.edits[0].renameSource.fileId === 'urn:test:0', 'a library ledger expands to answers marked mode "library"');
+// the offline build inlines three.js (only when it is installed here)
+try {
+  const off = join(tmp, 'offline.html'); run('build_editor.mjs', sample, off, '--offline');
+  const oh = readFileSync(off, 'utf8'); check(!oh.includes('cdn.jsdelivr.net/npm/three') && oh.includes('data:text/javascript;base64,'), 'the offline page carries three.js and no CDN address');
+} catch { console.log('skip  offline build (three.js not installed in fusion-parts-editor/scripts)'); }
+const setup = run('check_setup.mjs', join(tmp, 'work'));
+check(setup.includes('Node side is ready'), 'check_setup.mjs passes on a good install');
 // the built page carries the ledger library and no placeholder
 check(html.includes('function parseLedger') && html.includes('function expandLedger') && !html.includes('__LEDGER_LIB__') && !html.includes('export function'), 'the page carries the ledger library, inlined without export keywords');
 console.log(failed ? failed + ' check(s) failed' : 'all checks passed');

@@ -82,6 +82,7 @@ export function expandLedger(L, A) {
   const edits = new Map();
   const edit = p => { if (!edits.has(p.id)) edits.set(p.id, { part: p.id, kind: p.kind, linked: p.referenced, paths: p.paths.slice(0, 400), partName: p.name, rename: null, renameSource: null, bodies: new Map() }); return edits.get(p.id); };
   const finalName = new Map();   // "p3:0" -> the body name after the ledger, to spot duplicates
+  const matRows = new Map(), appRows = new Set();   // material changes, and bodies whose appearance or color the ledger also sets
   for (const r of L.rows) {
     const p = byId[r.part], tag = 'row ' + r.n + ' (' + r.part + (p ? ' "' + p.name + '"' : '') + ' ' + scopeLabel(r) + ' ' + r.field + ')';
     if (!p) { problems.push('row ' + r.n + ': this export has no part ' + r.part); continue; }
@@ -117,8 +118,15 @@ export function expandLedger(L, A) {
       bd.set[field] = field === 'customColor' ? r.to.toLowerCase() : r.to;
       if (field !== 'customColor') bd.was[field] = b[field] ?? null;
       if (field === 'name') finalName.set(p.id + ':' + r.body, r.to);
+      if (field === 'material') matRows.set(p.id + ':' + r.body, p.id + ' "' + p.name + '"');
+      if (field === 'appearance' || field === 'customColor') appRows.add(p.id + ':' + r.body);
     }
   }
+  // a new material usually pulls in its own appearance (seen on a real apply: "Aluminum - Satin" became "Stainless Steel - Satin", and one
+  // part got "Surface - Matte"). Say so once, so an appearance that matters can be pinned with its own row.
+  const loose = [...matRows.entries()].filter(([k]) => !appRows.has(k)).map(([, v]) => v);
+  if (loose.length) warnings.push(loose.length + ' material change' + (loose.length === 1 ? '' : 's') + ' without an appearance row (' + [...new Set(loose)].slice(0, 6).join(', ') + (loose.length > 6 ? ', …' : '')
+    + '): Fusion usually switches the appearance to the new material\'s own default, so the look may change. Add an appearance row to keep or choose it.');
   // duplicate body names: Fusion keeps names unique inside one component (and among top-level bodies) by adding " (1)" to the later one
   // Only groups that include a body this ledger renames are reported, so old duplicates the owner did not touch stay quiet.
   const scopes = new Map();   // scope key -> name -> [{ label, renamed }]
@@ -129,7 +137,7 @@ export function expandLedger(L, A) {
     m.get(nm).push({ label: p.id + (p.kind === 'root' ? '' : ' body ' + k) + ' "' + b.name + '"', renamed });
   });
   for (const [key, m] of scopes) for (const [nm, who] of m) if (who.length > 1 && who.some(w => w.renamed))
-    warnings.push('the name "' + nm + '" would be used ' + who.length + ' times (' + who.map(w => w.label).join(', ') + ') ' + (key === 'top level' ? 'among top-level bodies' : 'inside one component') + '; Fusion renames the later ones to "' + nm + ' (1)"');
+    warnings.push('the name "' + nm + '" would be used ' + who.length + ' times (' + who.map(w => w.label).join(', ') + ') ' + (key === 'top level' ? 'among top-level bodies' : 'inside one component') + '; Fusion renames the later ones to "' + nm + ' (1)". Give each its own name, for example "' + nm + ' 1" and "' + nm + ' 2".');
   for (const e of edits.values()) { const p = byId[e.part]; if (p.viaLinked && p.viaLinked.length && !p.referenced) warnings.push(e.part + ' "' + p.name + '" lives inside the linked file' + (p.viaLinked.length > 1 ? 's ' : ' ') + p.viaLinked.map(x => '"' + x + '"').join(', ') + '; editing it changes that library file too'); }
   const list = [...edits.values()].filter(e => e.rename || e.renameSource || e.bodies.size).map(e => {
     const o = { part: e.part, kind: e.kind, linked: e.linked, paths: e.paths, partName: e.partName };
@@ -140,6 +148,7 @@ export function expandLedger(L, A) {
   });
   const answers = { format: 'fusion-parts-answers/1', document: A.document.name, exportedAt: A.exportedAt,
     allowLinked: list.some(e => e.linked && e.bodies), allowSourceRename: list.some(e => e.renameSource), edits: list };
+  if (A.mode) answers.mode = A.mode;   // "library": made from a folder listing, so the apply script renames files without an open design
   return { answers, problems, held, warnings };
 }
 

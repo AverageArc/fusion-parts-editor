@@ -39,6 +39,16 @@ Read before changing the scripts. Everything here was observed on a live assembl
 - Two bodies in one component cannot share a name: Fusion renamed the second one asked to be `Plate` to `Plate (1)`. A dry run cannot predict this, so the page should warn about duplicate names.
 - `Occurrence.isReferencedComponent` is false for a component that lives inside a linked file reached through a linked parent (for example an O-ring inside a linked collar file, whose path starts with the linked collar). Editing them modified their linked parents' documents. Treat a part as library content when any ancestor in its path is linked.
 
+## Data files and folders (library mode, 2026-11-09)
+- Reading a folder with `dataFiles.item(i)` is one slow cloud request per item and timed the tool out on a 136-file folder. `dataFiles.asArray()` (and `dataFolders.asArray()`, `app.data.dataProjects.asArray()`) fetches the whole list at once: 136 files in about 2.5 seconds, then names, ids and version numbers are free. Use `asArray()` everywhere. Even `dataFolders.count` on a project root took 3 seconds, so keep folder walking to a minimum.
+- A folder is easiest reached from an open document: `app.documents` item `.dataFile.parentFolder` and `.parentProject`. A folder nested in a project is not under `rootFolder.dataFolders` at the top level.
+- `Document.save(comment)` saves a document as a new cloud version. `fusion_save.py` does only a dry run in tests so far; a real save has not been run.
+- Folders can hold several files with the same name (a real folder had four called the same thing). They are different files with different ids; the ledger and apply script address them by id.
+
+## Export self-check (2026-11-09)
+- `root.allOccurrences.count` and the count of linked occurrences are a cheap independent check on the export's grouping. On the real 55-occurrence assembly they matched exactly, and the summed body mass matched `root.physicalProperties.mass` to 0.01 g.
+- A part inside a linked file is not `isReferencedComponent`. The export walks `Occurrence.assemblyContext` to the root and records the linked ancestors as `viaLinked`, and puts the source file id in the grouping key. Doing so split 23 parts into 27 on the real assembly: same-named O-rings in three different collar files had been one part before.
+
 ## Running scripts
 - The MCP script tool calls `run(_context)` **after** the top-level code of the script has executed. Prints at top level appear before anything `run` does.
 - `exec(compile(open(path).read(), path, 'exec'), globals())` works inside a script, so a short stub can load the real script from disk and substitute `__PARAMS__`.
