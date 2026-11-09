@@ -1,0 +1,8 @@
+{
+  "edits": [
+    { "part": "p0", "name": "Base plate", "reason": "The largest body, so it is the base plate." },
+    { "part": "p2", "name": "Corner bracket", "material": "Aluminum 6061", "appearance": "Aluminum - Satin", "reason": "Printed-looking ABS, but the bracket carries load, so aluminum fits better. Your call." },
+    { "part": "p4", "name": "M3 washer", "bodies": [ { "index": 0, "name": "Washer", "material": "Stainless Steel AISI 304", "appearance": "Steel - Satin" } ], "reason": "Washers in a toolhead are usually stainless." },
+    { "part": "p3", "name": "M3x8 socket screw", "material": "Stainless Steel AISI 304", "reason": "Linked screws. The new name renames the library file itself, in every design that uses it. The material change stays locked until you agree." }
+  ]
+}

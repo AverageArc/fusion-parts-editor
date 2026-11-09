@@ -1,11 +1,11 @@
 // Writes a small made-up assembly in the same format the Fusion export script produces, so the editor page can be tried (and tested) without Fusion.
-//   node tools/make-sample.mjs            writes examples/sample-export/assembly.json and meshes.json
+//   node tools/make-sample.mjs [out_dir]  writes assembly.json and meshes.json (default: examples/sample-export)
 // The assembly is "Demo bracket": two plates with default names, a bracket (2 copies), 4 screws that count as "linked" parts (to show the lock), and 4 washers.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const out = join(resolve(fileURLToPath(new URL('..', import.meta.url))), 'examples', 'sample-export');
+const out = process.argv[2] ? resolve(process.argv[2]) : join(resolve(fileURLToPath(new URL('..', import.meta.url))), 'examples', 'sample-export');
 mkdirSync(out, { recursive: true });
 
 const box = (w, d, h) => {   // centered on the origin; x = width, y = depth, z = height
@@ -57,6 +57,7 @@ place(bracket, 'Component1:1', [-24, -6, 8]); place(bracket, 'Component1:2', [24
 // four screws from a "linked" document (locked in the editor), and four washers
 const screwPaths = [0, 1, 2, 3].map(i => 'M3x8 screw:' + (i + 1));
 const screw = addPart({ kind: 'component', name: 'M3x8 screw', referenced: true, paths: screwPaths, bodies: [{ name: 'Body1', mesh: cyl(1.5, 8), material: 'Steel', appearance: 'Steel - Satin' }] });
+screw.source = { fileId: 'urn:adsk.wipprod:dm.lineage:SAMPLEFILEID0000000000', file: 'M3x8 screw', version: 2, folder: 'Fasteners', project: 'Demo library' };
 const washer = addPart({ kind: 'component', name: 'M3 WASHER', paths: [0, 1, 2, 3].map(i => 'M3 WASHER:' + (i + 1)), bodies: [{ name: 'Body1', mesh: cyl(3.2, 0.5, 20, 1.6), material: 'Steel', appearance: 'Steel - Satin' }] });
 [[-24, -6], [24, -6], [-24, 6], [24, 6]].forEach(([x, y], i) => { place(screw, screwPaths[i], [x, y, 14]); place(washer, 'M3 WASHER:' + (i + 1), [x, y, 10.25]); });
 

@@ -74,6 +74,10 @@ button,select,input{font:inherit;color:inherit}
 .badge.link{border-color:var(--warn);color:var(--warn)}
 .mass{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .mass b{color:var(--warn)}
+.why{font-size:12px;color:var(--accent);margin:0 0 4px 26px}
+.why b{font-weight:600}
+.note{margin:6px 0 0;font-size:12.5px;color:var(--ink);background:var(--changed);border:1px solid var(--warn);border-radius:8px;padding:5px 9px}
+.note[hidden]{display:none}
 .ppath{font-size:11.5px;color:var(--muted);margin:1px 0 4px 26px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .body{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px 8px;align-items:end;padding:5px 0 3px 26px;border-top:1px dashed var(--line)}
 .body:first-of-type{border-top:0}
@@ -88,6 +92,7 @@ button,select,input{font:inherit;color:inherit}
 input[type=color]{width:30px;height:24px;padding:0;border:1px solid var(--line);border-radius:5px;background:none;flex:none}
 .colrow{display:flex;gap:4px;align-items:center}
 .empty{color:var(--muted);padding:20px;text-align:center}
+.warn{margin:4px 0;padding:6px 10px;border-left:3px solid var(--accent);font-size:12.5px}
 .answers{border-top:1px solid var(--line);background:var(--panel);padding:8px 14px;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
 .answers p{margin:0;flex-basis:100%;font-size:12px;color:var(--muted)}
 details.review{border-top:1px solid var(--line);padding:6px 14px;background:var(--panel);font-size:12.5px;max-height:30vh;overflow:auto}
@@ -128,15 +133,15 @@ details.review td.from{color:var(--muted);text-decoration:line-through}
   </section>
 
   <section class="panel-col" aria-label="Parts">
-    <div class="head"><h1 id="title"></h1><div class="pills" id="pills"></div></div>
+    <div class="head"><h1 id="title"></h1><div class="pills" id="pills"></div><p class="note" id="note" hidden></p></div>
     <div class="bar">
       <input type="search" id="q" placeholder="Search names, materials, paths" aria-label="Search parts">
       <select id="filter" aria-label="Filter parts">
-        <option value="all">All parts</option><option value="changed">Changed</option><option value="unnamed">Default names (Body1, Component2…)</option>
+        <option value="all">All parts</option><option value="changed">Changed</option><option value="suggested">Suggested by Claude</option><option value="unnamed">Default names (Body1, Component2…)</option>
         <option value="linked">Linked from other files</option><option value="hidden">Hidden in Fusion</option><option value="nomat">No material</option>
       </select>
       <select id="sort" aria-label="Sort parts"><option value="tree">Assembly order</option><option value="mass">Heaviest first</option><option value="name">Name A to Z</option><option value="count">Most copies first</option></select>
-      <label title="Linked parts live in another Fusion file. Editing them changes that file too."><input type="checkbox" id="unlock"> Unlock linked</label>
+      <label id="unlockLbl" title="These parts are links inside linked files, so their source file is not known. Editing them changes another file, so they are locked unless you unlock them."><input type="checkbox" id="unlock"> Unlock nested links</label>
     </div>
     <div class="bulk" id="bulk" hidden>
       <b id="bulkCount"></b>
@@ -151,16 +156,17 @@ details.review td.from{color:var(--muted);text-decoration:line-through}
       <button class="btn small" id="bulkAll">Tick all shown</button>
     </div>
     <div id="rows"></div>
-    <details class="review" id="review"><summary id="reviewSum">Review changes</summary><div id="changes"></div></details>
+    <details class="review" id="review" open><summary id="reviewSum">Ledger</summary><div id="changes"></div></details>
     <div class="answers">
-      <button class="btn primary" id="copy">Copy answers</button>
-      <button class="btn" id="download">Download .json</button>
+      <button class="btn primary" id="copy">Copy ledger</button>
+      <button class="btn" id="download">Download .txt</button>
+      <label class="btn" title="Load a saved ledger, or an answers file with edits Claude suggested">Load ledger…<input type="file" id="load" accept=".txt,.json,text/plain,application/json" hidden></label>
       <button class="btn" id="reset">Reset all</button>
-      <p>Nothing here changes Fusion. Click <b>Copy answers</b> and paste the result back to Claude, who will check it against the model and apply it.</p>
+      <p>Nothing here changes Fusion. The ledger above lists every change. Click <b>Copy ledger</b> and paste it to Claude: pasting it is your go-ahead. Claude checks it against the open model (a dry run), applies every line, then re-exports to confirm each change and lists anything else that moved. It stops only for lines that no longer match the model. Library-file renames change every design that uses the file.</p>
     </div>
   </section>
 </div>
-<div class="modal" id="modal" hidden><div><p>Select all, copy, and paste into the chat:</p><textarea id="modalText" readonly></textarea><p><button class="btn" id="modalClose">Close</button></p></div></div>
+<div class="modal" id="modal" hidden><div><p>Select all, copy, and paste the ledger into the chat:</p><textarea id="modalText" readonly></textarea><p><button class="btn" id="modalClose">Close</button></p></div></div>
 <datalist id="dl-mat"></datalist><datalist id="dl-app"></datalist>
 
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
@@ -171,6 +177,16 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const A = __ASSEMBLY__;
 const G = __GEO__;
+const PROPOSAL = __PROPOSAL__;   // answers file with suggested edits, or null
+/* the ledger library (scripts/ledger.mjs), inlined by the builder so the page and the Node tools read and write the same format */
+__LEDGER_LIB__
+// what Claude suggested, by "part|scope|field", so each ledger row can say whether the owner kept, changed or added it
+const PV = new Map();
+for (const e of (PROPOSAL?.edits || [])) {
+  if (e.rename) PV.set(e.part + '|comp|name', e.rename.to);
+  if (e.renameSource) PV.set(e.part + '|file|name', e.renameSource.to);
+  for (const b of e.bodies || []) for (const [f, v] of Object.entries(b.set || {})) PV.set(e.part + '|body ' + b.index + '|' + (f === 'customColor' ? 'color' : f), v);
+}
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 const parts = A.parts, byId = Object.fromEntries(parts.map(p => [p.id, p]));
@@ -183,13 +199,19 @@ $('#dl-app').innerHTML = A.libraries.appearances.map(a => `<option value="${esc(
 /* ---------- geometry ---------- */
 const bin = atob(G.blob), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
 const buf = await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer();
-const P = new Int16Array(buf, 0, G.pn), I = new Uint32Array(buf, G.pn * 2 + G.pad);
+const P = new Int16Array(buf, 0, G.pn), I = new Uint32Array(buf, G.pn * 2 + G.pad, G.tn);
+const N = G.tn !== undefined && buf.byteLength >= G.pn * 2 + G.pad + G.tn * 4 + G.pn ? new Int8Array(buf, G.pn * 2 + G.pad + G.tn * 4, G.pn) : null;   // Fusion's own vertex normals
 const geoByKey = {};
 for (const m of G.meshes) {
   const pa = new Float32Array(m.vn * 3);
   for (let i = 0; i < pa.length; i += 3) for (let k = 0; k < 3; k++) pa[i + k] = P[m.vo * 3 + i + k] * m.k + m.c[k];
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pa, 3)); g.setIndex(new THREE.BufferAttribute(I.slice(m.io, m.io + m.in), 1));
-  g.computeVertexNormals(); g.computeBoundingBox(); geoByKey[m.key] = g;
+  if (N && m.hn) {   // exact normals from Fusion: hard edges stay sharp and curved faces stay smooth
+    const na = new Float32Array(m.vn * 3);
+    for (let i = 0; i < na.length; i += 3) { const x = N[m.vo * 3 + i], y = N[m.vo * 3 + i + 1], z = N[m.vo * 3 + i + 2], l = Math.hypot(x, y, z) || 1; na[i] = x / l; na[i + 1] = y / l; na[i + 2] = z / l; }
+    g.setAttribute('normal', new THREE.BufferAttribute(na, 3));
+  } else g.computeVertexNormals();
+  g.computeBoundingBox(); geoByKey[m.key] = g;
 }
 
 /* ---------- scene ---------- */
@@ -265,9 +287,12 @@ cvs.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault();
 cvs.addEventListener('pointerdown', e => { if (e.button !== 1) return; const n = performance.now(); if (n - lastMid < 400) { lastMid = 0; goHome(); } else lastMid = n; });
 
 /* ---------- edit state ---------- */
-const KEY = 'fpe:' + A.document.name + ':' + A.exportedAt;
+const hash = s => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+const KEY = 'fpe:' + A.document.name + ':' + A.exportedAt + (PROPOSAL ? ':' + hash(JSON.stringify(PROPOSAL)) : '');
 let E = {}; try { E = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(E)); } catch {} };
+let R = {}; try { R = JSON.parse(localStorage.getItem(KEY + ':why') || '{}'); } catch {}   // part id -> why Claude suggested the edit
+const saveR = () => { try { localStorage.setItem(KEY + ':why', JSON.stringify(R)); } catch {} };
 const bk = (pid, k) => pid + ':' + k;
 function cur(pid, k, f) { const e = E[bk(pid, k)]; if (e && f in e) return e[f]; return f === 'customColor' ? null : byId[pid].bodies[k]?.[f]; }
 function curName(pid) { const e = E[pid]; return e && 'name' in e ? e.name : byId[pid].name; }
@@ -282,7 +307,9 @@ function setPartName(pid, v) {
 }
 const partChanged = pid => !!E[pid] || byId[pid].bodies.some((_, k) => E[bk(pid, k)]);
 const changedParts = () => parts.filter(p => partChanged(p.id));
-let unlocked = false; const locked = p => p.referenced && !unlocked;
+// A linked part whose source file is known is a library part: its fields are editable, and the edits go to the library file (the ledger says so).
+// Only links inside linked files (no known source) stay locked until "Unlock nested links" is ticked, and while locked they are kept out of the ledger.
+let unlocked = false; const locked = p => p.referenced && !p.source && !unlocked;
 const isDefaultName = n => /^(Body|Component|Part|Untitled|Solid|Surface)\s*\(?\d*\)?$/i.test((n || '').trim());
 const fmtG = g => g >= 100 ? g.toFixed(0) + ' g' : g >= 10 ? g.toFixed(1) + ' g' : g.toFixed(2) + ' g';
 function bodyMass(pid, k) {
@@ -298,6 +325,7 @@ function matches(p) {
   const q = $('#q').value.trim().toLowerCase(), f = $('#filter').value;
   if (q) { const hay = [curName(p.id), p.name, p.paths[0] || '', ...p.bodies.flatMap((b, k) => [cur(p.id, k, 'name'), cur(p.id, k, 'material'), cur(p.id, k, 'appearance')])].join(' ').toLowerCase(); if (!hay.includes(q)) return false; }
   if (f === 'changed') return partChanged(p.id);
+  if (f === 'suggested') return !!R[p.id];
   if (f === 'linked') return p.referenced;
   if (f === 'unnamed') return isDefaultName(curName(p.id)) || p.bodies.some((_, k) => isDefaultName(cur(p.id, k, 'name')));
   if (f === 'hidden') return A.instances.some(i => i.partId === p.id && !i.visible);
@@ -317,7 +345,8 @@ function rowHtml(p) {
   const pm = partMass(pid), massTxt = p.bodies.length ? (Math.abs(pm.now - pm.orig) > 1e-6 ? `${fmtG(pm.orig)} → <b>${fmtG(pm.now)}</b>` : fmtG(pm.orig)) : 'assembly';
   const nameVal = p.kind === 'root' ? cur(pid, 0, 'name') : curName(pid);
   const nameOrig = p.kind === 'root' ? p.bodies[0].name : p.name;
-  const nameDisabled = lk || (p.kind === 'component' && p.referenced);
+  const libName = p.kind === 'component' && p.referenced && !!p.source;   // a linked part's name is its library file's name: editing it renames that file
+  const nameDisabled = libName ? false : (lk || (p.kind === 'component' && p.referenced));
   const bodies = p.bodies.map((b, k) => {
     const mat = cur(pid, k, 'material'), app = cur(pid, k, 'appearance'), col = cur(pid, k, 'customColor');
     const bn = cur(pid, k, 'name'), ed = f => (E[bk(pid, k)] && f in E[bk(pid, k)]) ? 'edited' : '';
@@ -332,10 +361,11 @@ function rowHtml(p) {
   }).join('');
   return `<article class="part ${ch ? 'changed' : ''} ${sel.has(pid) ? 'sel' : ''}" data-pid="${pid}">
     <div class="ph"><input type="checkbox" class="pick" ${sel.has(pid) ? 'checked' : ''} aria-label="Tick ${esc(nameOrig)}">
-      <input class="pname" data-pname value="${esc(nameVal)}" ${nameDisabled ? 'disabled' : ''} title="${p.kind === 'root' ? 'Body name' : p.referenced ? 'Linked parts cannot be renamed from here' : 'Component name (renames every copy)'}" aria-label="Name">
-      <span class="badge">×${p.instances}</span>${p.kind === 'root' ? '<span class="badge">body</span>' : ''}${p.referenced ? '<span class="badge link" title="Lives in another Fusion file">linked</span>' : ''}${hiddenN ? `<span class="badge">${hiddenN === p.instances ? 'hidden' : hiddenN + ' hidden'}</span>` : ''}
-      <span class="mass">${massTxt}</span></div>
-    <div class="ppath" title="${esc(p.paths.join('\n'))}">${esc(p.paths[0] || '(top level)')}${p.paths.length > 1 ? ` + ${p.paths.length - 1} more` : ''}</div>
+      <input class="pname" data-pname value="${esc(nameVal)}" ${nameDisabled ? 'disabled' : ''} title="${p.kind === 'root' ? 'Body name' : libName ? `Renames the library file "${p.source.file}" (${p.source.project} / ${p.source.folder}) in every design that uses it` : p.referenced ? 'This linked part\'s source file is not known, so it cannot be renamed from here' : 'Component name (renames every copy)'}" aria-label="Name">
+      <span class="badge">×${p.instances}</span>${p.kind === 'root' ? '<span class="badge">body</span>' : ''}${libName ? '<span class="badge link" title="This part is a library file. Its name, material, appearance and body names are edited in that file, so they change in every design that uses it.">library file</span>' : p.referenced ? '<span class="badge link" title="Lives in another Fusion file">linked</span>' : ''}${p.viaLinked && p.viaLinked.length && !p.referenced ? `<span class="badge link" title="This part sits inside the linked file ${esc(p.viaLinked.join(' > '))}, so editing it changes that library file.">in ${esc(p.viaLinked[p.viaLinked.length - 1])}</span>` : ''}${hiddenN ? `<span class="badge">${hiddenN === p.instances ? 'hidden' : hiddenN + ' hidden'}</span>` : ''}
+      <span class="mass">${massTxt}</span><button class="btn small" data-revert ${ch ? '' : 'hidden'} title="Throw away every edit on this part">Revert</button></div>
+    ${R[pid] ? `<div class="why"><b>${ledgerRows().some(r => r.part === pid && r.origin === 'suggested') || !ch ? 'Suggested:' : 'Suggested, but you changed it:'}</b> ${esc(R[pid])}</div>` : ''}
+    <div class="ppath" title="${esc(p.paths.join('\n'))}">${esc(p.paths[0] || '(top level)')}${p.paths.length > 1 ? ` + ${p.paths.length - 1} more` : ''}${p.source ? ` · library file in ${esc(p.source.project)} / ${esc(p.source.folder)} (v${esc(p.source.version)})` : ''}</div>
     ${bodies || '<div class="body"><span class="mass">An assembly container with no bodies of its own. Only its name can change.</span></div>'}
   </article>`;
 }
@@ -348,19 +378,42 @@ function renderSummary() {
   const n = changedParts().length, nb = parts.reduce((a, p) => a + p.bodies.length, 0), linked = parts.filter(p => p.referenced).length;
   const edits = Object.values(E).reduce((a, e) => a + Object.keys(e).length, 0);
   $('#pills').innerHTML = `<span class="pill">${parts.length} parts</span><span class="pill">${nb} bodies</span><span class="pill">${A.instances.length} placed copies</span>${linked ? `<span class="pill">${linked} linked</span>` : ''}<span class="pill ${edits ? 'on' : ''}">${edits} edit${edits === 1 ? '' : 's'} in ${n} part${n === 1 ? '' : 's'}</span>`;
+  const sug = Object.keys(R).length; $('#note').hidden = !sug;
+  if (sug) { const kept = Object.keys(R).filter(pid => partChanged(pid)).length; $('#note').textContent = `Claude suggested edits for ${sug} part${sug === 1 ? '' : 's'}, each with a reason. ${kept} still in place. Change any of them, or press Revert on a part to drop it, then click Copy ledger.`; }
   const sc = sel.size; $('#bulk').hidden = !sc; $('#bulkCount').textContent = sc + ' ticked';
-  $('#reviewSum').textContent = `Review changes (${edits})`;
+  $('#reviewSum').textContent = `Ledger: ${edits} change${edits === 1 ? '' : 's'} in ${n} part${n === 1 ? '' : 's'}`;
+  const held = changedParts().filter(p => locked(p)), rows = ledgerRows(), chk = checkLedger(rows);
+  const heldNote = held.length ? `<p class="empty">${held.length} suggested edit${held.length === 1 ? ' is' : 's are'} on locked nested links and not in the ledger: ${esc(held.map(p => p.name).join(', '))}. Tick "Unlock nested links" to include ${held.length === 1 ? 'it' : 'them'}.</p>` : '';
+  const flags = chk.problems.map(x => `<p class="warn"><b>Cannot apply:</b> ${esc(x)}</p>`).concat(chk.held.map(h => `<p class="warn"><b>Will be held back:</b> ${esc(h.what)}: ${esc(h.why)}${h.suggestions.length ? '. Closest in Fusion: ' + h.suggestions.map(s => '“' + esc(s) + '”').join(', ') : ''}</p>`), chk.warnings.map(w => `<p class="warn"><b>Check:</b> ${esc(w)}</p>`)).join('');
+  const pn = id => esc(byId[id].kind === 'root' ? byId[id].bodies[0].name : byId[id].name);
+  $('#changes').innerHTML = flags + (rows.length ? `<table>${rows.map((r, i) => `<tr><td>${i + 1}</td><td>${pn(r.part)}${r.scope === 'file' || (r.where && /^(library|inside)/.test(r.where)) ? ' <span class="badge link">library</span>' : ''}</td><td>${esc(scopeLabel(r))} ${r.field}</td><td class="from">${esc(r.from || '(none)')}</td><td>${esc(r.to || '(none)')}</td><td class="from">${esc(r.origin)}</td></tr>`).join('')}</table>` : '<p class="empty">No changes yet.</p>') + heldNote;
+}
+/* The ledger: one row per change, in the same format Claude reads back (scripts/ledger.mjs). The review table, the copied text and the checks all come from these rows. */
+const originOf = (key, to) => !PV.has(key) ? 'owner' : PV.get(key) === to ? 'suggested' : 'suggested, changed';
+function ledgerRows() {
   const rows = [];
-  for (const p of changedParts()) {
-    const e = E[p.id]; if (e?.name) rows.push([p.name, 'component name', p.name, e.name, p.referenced]);
-    p.bodies.forEach((b, k) => { const be = E[bk(p.id, k)]; if (!be) return; const lab = (p.kind === 'root' ? '' : p.name + ' / ') + b.name;
-      for (const [f, v] of Object.entries(be)) rows.push([lab, f === 'customColor' ? 'custom color' : f, f === 'customColor' ? '(unchanged)' : b[f] ?? '(none)', v ?? '(none)', p.referenced]); });
+  for (const p of changedParts().filter(p => !locked(p))) {   // edits on locked nested links stay out of the ledger
+    const via = p.viaLinked && p.viaLinked.length ? 'inside linked file' + (p.viaLinked.length > 1 ? 's ' : ' ') + p.viaLinked.map(n => '"' + n + '"').join(', ') : '';
+    const lib = p.referenced && p.source ? 'library file "' + p.source.file + '"' : '';
+    const e = E[p.id];
+    if (e?.name) {
+      if (p.kind === 'component' && p.referenced && p.source) rows.push({ part: p.id, scope: 'file', field: 'name', from: p.source.file, to: e.name, origin: originOf(p.id + '|file|name', e.name), where: p.source.project + '/' + p.source.folder });
+      else if (p.kind === 'component') rows.push({ part: p.id, scope: 'comp', field: 'name', from: p.name, to: e.name, origin: originOf(p.id + '|comp|name', e.name), where: via });
+    }
+    p.bodies.forEach((b, k) => { const be = E[bk(p.id, k)]; if (!be) return;
+      for (const [f, v] of Object.entries(be)) { const fld = f === 'customColor' ? 'color' : f; if (fld === 'color' && !v) continue;
+        rows.push({ part: p.id, scope: 'body', body: k, field: fld, from: fld === 'color' ? '' : b[f] ?? '', to: v ?? '', origin: originOf(p.id + '|body ' + k + '|' + fld, v), where: via || lib }); } });
   }
-  $('#changes').innerHTML = rows.length ? `<table>${rows.map(r => `<tr><td>${esc(r[0])}${r[4] ? ' <span class="badge link">linked</span>' : ''}</td><td>${r[1]}</td><td class="from">${esc(r[2])}</td><td>${esc(r[3])}</td></tr>`).join('')}</table>` : '<p class="empty">No changes yet.</p>';
+  return sortRows(rows);
+}
+const ledgerText = rows => formatLedger({ doc: A.document.name, exportedAt: A.exportedAt, rows });
+// read the ledger back the way Claude will, so problems show here and not at apply time
+function checkLedger(rows) {
+  try { return expandLedger(parseLedger(ledgerText(rows)), A); } catch (e) { return { problems: ['internal: ' + e.message], held: [], warnings: [] }; }
 }
 function updateRow(pid) { const el = rowsEl.querySelector(`[data-pid="${pid}"]`); if (!el) return; const tmp = document.createElement('div'); tmp.innerHTML = rowHtml(byId[pid]); const nu = tmp.firstElementChild;
   // keep the focused input alive while the user types: only refresh header flags, mass and swatches
-  el.classList.toggle('changed', partChanged(pid)); el.querySelector('.mass').innerHTML = nu.querySelector('.mass').innerHTML;
+  el.classList.toggle('changed', partChanged(pid)); el.querySelector('[data-revert]').hidden = !partChanged(pid); el.querySelector('.mass').innerHTML = nu.querySelector('.mass').innerHTML;
   el.querySelectorAll('.body').forEach((bd, i) => { const nb = nu.querySelectorAll('.body')[i]; if (!nb) return; bd.querySelector('.sw') && (bd.querySelector('.sw').style.background = nb.querySelector('.sw').style.background);
     bd.querySelectorAll('input[type=text]').forEach((inp, j) => { const ni = nb.querySelectorAll('input[type=text]')[j]; if (ni) inp.className = ni.className; });
     const cl = bd.querySelector('[data-clr]'); if (cl) cl.hidden = nb.querySelector('[data-clr]').hidden; });
@@ -372,15 +425,26 @@ rowsEl.addEventListener('input', e => {
   const bd = t.closest('.body'); if (!bd || !t.dataset.f) return; const k = +bd.dataset.k;
   setBody(pid, k, t.dataset.f, t.value); updateRow(pid);
 });
+// When a material or appearance field loses focus with a name Fusion does not have: fix the capitalization silently, otherwise ask.
+rowsEl.addEventListener('change', e => {
+  const t = e.target, f = t.dataset?.f; if (f !== 'material' && f !== 'appearance') return;
+  const art = t.closest('.part'), bd = t.closest('.body'); if (!art || !bd) return; const pid = art.dataset.pid, k = +bd.dataset.k, v = t.value.trim();
+  const lib = f === 'material' ? LIB_MAT : LIB_APP; if (!v || lib.has(v) || v === byId[pid].bodies[k][f]) return;
+  const near = closest(v, [...lib.keys()]);
+  if (near[0] && near[0].toLowerCase() === v.toLowerCase()) { t.value = near[0]; setBody(pid, k, f, near[0]); updateRow(pid); return; }
+  if (!confirm(`"${v}" is not a ${f} name in Fusion's libraries.` + (near.length ? `\nClosest: ${near.join(', ')}` : '') + `\n\nOK keeps it (it will be held back when applied). Cancel puts the original back.`)) { t.value = byId[pid].bodies[k][f] ?? ''; setBody(pid, k, f, t.value); updateRow(pid); }
+});
 rowsEl.addEventListener('click', e => {
   const art = e.target.closest('.part'); if (!art) return; const pid = art.dataset.pid;
   if (e.target.matches('.pick')) { e.target.checked ? sel.add(pid) : sel.delete(pid); art.classList.toggle('sel', sel.has(pid)); renderSummary(); refreshScene(); return; }
+  if (e.target.matches('[data-revert]')) { delete E[pid]; byId[pid].bodies.forEach((_, k) => delete E[bk(pid, k)]); delete R[pid]; save(); saveR(); renderRows(); return; }
   if (e.target.matches('[data-clr]')) { const k = +e.target.closest('.body').dataset.k; setBody(pid, k, 'customColor', null); updateRow(pid); art.querySelector(`.body[data-k="${k}"] input[type=color]`).value = byId[pid].bodies[k].color || '#b9bcc4'; return; }
 });
 rowsEl.addEventListener('mouseover', e => { const art = e.target.closest('.part'); const pid = art?.dataset.pid || null; if (pid !== hover) { hover = pid; refreshScene(); } });
 rowsEl.addEventListener('mouseleave', () => { hover = null; refreshScene(); });
 ['q', 'filter', 'sort'].forEach(id => $('#' + id).addEventListener('input', renderRows));
 $('#unlock').addEventListener('change', e => { unlocked = e.target.checked; renderRows(); });
+$('#unlockLbl').hidden = !parts.some(p => p.referenced && !p.source);   // only needed when the assembly has links inside linked files
 
 /* ---------- scene highlighting ---------- */
 let showHidden = false, isolate = false;
@@ -433,36 +497,65 @@ $('#bulkNone').onclick = () => { sel.clear(); renderRows(); };
 $('#bulkAll').onclick = () => { shown().forEach(p => sel.add(p.id)); renderRows(); };
 $('#bulkGo').onclick = () => {
   const a = $('#bulkAct').value, v = $('#bv')?.value ?? '', v2 = $('#bv2')?.value ?? ''; let n = 0, skipped = 0;
-  for (const pid of sel) { const p = byId[pid]; if (locked(p)) { skipped++; continue; }
+  for (const pid of sel) { const p = byId[pid];
+    const libOnly = (a === 'find' || a === 'prefix' || a === 'suffix') && p.kind === 'component' && p.referenced && !!p.source;   // only the library file name changes; its bodies stay locked
+    if (locked(p) && !libOnly) { skipped++; continue; }
     if (a === 'material' || a === 'appearance') { if (!v) continue; p.bodies.forEach((_, k) => setBody(pid, k, a, v)); n++; }
     else if (a === 'color') { p.bodies.forEach((_, k) => setBody(pid, k, 'customColor', v)); n++; }
     else if (a === 'bodyname') { p.bodies.forEach((_, k) => { if (p.kind !== 'root') setBody(pid, k, 'name', p.bodies.length > 1 ? curName(pid) + ' ' + (k + 1) : curName(pid)); }); n++; }
     else { const fn = s => a === 'prefix' ? v + s : a === 'suffix' ? s + v : (() => { if (!v) return s; try { return $('#bre')?.checked ? s.replace(new RegExp(v, 'g'), v2) : s.split(v).join(v2); } catch { return s; } })();
-      if (!(p.kind === 'component' && p.referenced)) setPartName(pid, fn(curName(pid))); if (p.kind !== 'root') p.bodies.forEach((_, k) => setBody(pid, k, 'name', fn(cur(pid, k, 'name')))); n++; } }
+      if (!(p.kind === 'component' && p.referenced) || p.source) setPartName(pid, fn(curName(pid))); if (p.kind !== 'root' && !locked(p)) p.bodies.forEach((_, k) => setBody(pid, k, 'name', fn(cur(pid, k, 'name')))); n++; } }
   renderRows(); if (skipped) alert(`${skipped} linked part${skipped > 1 ? 's were' : ' was'} skipped. Tick "Unlock linked" to include them.`);
 };
 
 /* ---------- answers ---------- */
-function answers() {
-  const edits = [];
-  for (const p of changedParts()) {
-    const e = { part: p.id, kind: p.kind, linked: p.referenced, paths: p.paths.slice(0, 400), partName: p.name };
-    if (E[p.id]?.name) e.rename = { from: p.name, to: E[p.id].name };
-    const bodies = [];
-    p.bodies.forEach((b, k) => { const be = E[bk(p.id, k)]; if (!be) return; const o = { index: k, bodyName: b.name, was: {}, set: {} };
-      for (const [f, v] of Object.entries(be)) { o.set[f] = v; if (f !== 'customColor') o.was[f] = b[f] ?? null; } bodies.push(o); });
-    if (bodies.length) e.bodies = bodies; edits.push(e);
-  }
-  return { format: 'fusion-parts-answers/1', document: A.document.name, exportedAt: A.exportedAt, allowLinked: unlocked && edits.some(e => e.linked), edits };
+// Before the ledger leaves the page, anything that will not apply as written is shown once and the owner decides.
+function confirmLedger(rows) {
+  const c = checkLedger(rows), msgs = c.problems.map(x => 'Cannot apply: ' + x).concat(c.held.map(h => 'Held back: ' + h.what + ': ' + h.why + (h.suggestions.length ? ' (closest: ' + h.suggestions.join(', ') + ')' : '')), c.warnings.map(w => 'Check: ' + w));
+  return !msgs.length || confirm(msgs.slice(0, 8).join('\n\n') + (msgs.length > 8 ? '\n\n…and ' + (msgs.length - 8) + ' more (listed under the ledger).' : '') + '\n\nCopy the ledger anyway?');
 }
 $('#copy').onclick = async () => {
-  const j = JSON.stringify(answers(), null, 1);
-  try { await navigator.clipboard.writeText(j); $('#copy').textContent = 'Copied ✓'; setTimeout(() => $('#copy').textContent = 'Copy answers', 1800); }
+  const rows = ledgerRows(); if (!rows.length) { alert('There are no changes yet.'); return; } if (!confirmLedger(rows)) return;
+  const j = ledgerText(rows);
+  try { await navigator.clipboard.writeText(j); $('#copy').textContent = 'Copied ✓'; setTimeout(() => $('#copy').textContent = 'Copy ledger', 1800); }
   catch { $('#modalText').value = j; $('#modal').hidden = false; $('#modalText').select(); }
 };
 $('#modalClose').onclick = () => $('#modal').hidden = true;
-$('#download').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(answers(), null, 1)], { type: 'application/json' })); a.download = 'parts-answers.json'; a.click(); };
-$('#reset').onclick = () => { if (!Object.keys(E).length || confirm('Throw away all your edits?')) { E = {}; sel.clear(); save(); renderRows(); } };
+$('#download').onclick = () => { const rows = ledgerRows(); if (!rows.length) { alert('There are no changes yet.'); return; } if (!confirmLedger(rows)) return;
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([ledgerText(rows)], { type: 'text/plain' })); a.download = 'parts-ledger.txt'; a.click(); };
+$('#reset').onclick = () => { if (!Object.keys(E).length || confirm('Throw away all your edits?')) { E = {}; R = {}; sel.clear(); save(); saveR(); renderRows(); } };
+
+/* load an answers file (suggested edits from Claude, or a saved copy of your own) into the page */
+function loadAnswers(a) {
+  let parts_n = 0; const skipped = [];
+  for (const e of a.edits || []) {
+    const p = byId[e.part];
+    if (!p || p.name !== e.partName) { skipped.push(e.partName || e.part); continue; }
+    let touched = false;
+    if (e.rename && p.kind === 'component' && !p.referenced) { setPartName(p.id, e.rename.to); touched = true; }
+    if (e.renameSource && p.kind === 'component' && p.source && p.source.fileId === e.renameSource.fileId) { setPartName(p.id, e.renameSource.to); touched = true; }
+    for (const bd of e.bodies || []) {
+      const b = p.bodies[bd.index]; if (!b || b.name !== bd.bodyName) { skipped.push(`${e.partName} / ${bd.bodyName}`); continue; }
+      for (const [f, v] of Object.entries(bd.set || {})) { setBody(p.id, bd.index, f, v); touched = true; }
+    }
+    if (touched) { parts_n++; if (e.reason) R[p.id] = String(e.reason); }
+  }
+  saveR(); renderRows();
+  return { parts_n, skipped };
+}
+$('#load').addEventListener('change', async ev => {
+  const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+  const txt = await f.text(); let a;
+  if (/^\s*#\s*fusion-parts-ledger\//.test(txt)) {   // a ledger saved from this page: read it back through the same expander Claude uses
+    try { const x = expandLedger(parseLedger(txt), A); if (x.problems.length) { alert('That ledger does not fit this page:\n' + x.problems.slice(0, 5).join('\n')); return; } a = x.answers; } catch (e) { alert('That ledger cannot be read: ' + e.message); return; }
+  } else {
+    try { a = JSON.parse(txt); } catch { alert('That file is neither a ledger nor valid JSON.'); return; }
+  }
+  if (!String(a.format || '').startsWith('fusion-parts-answers/') || !Array.isArray(a.edits)) { alert('That is not a ledger or answers file.'); return; }
+  if (a.document !== A.document.name && !confirm(`This file is for "${a.document}", but this page is for "${A.document.name}". Load it anyway?`)) return;
+  const r = loadAnswers(a);
+  alert(`Loaded edits for ${r.parts_n} part${r.parts_n === 1 ? '' : 's'}.` + (r.skipped.length ? `\nSkipped ${r.skipped.length} that no longer match this export: ${r.skipped.slice(0, 5).join(', ')}${r.skipped.length > 5 ? '…' : ''}` : ''));
+});
 
 /* theme */
 const tb = $('#b-theme'), root = document.documentElement;
@@ -474,6 +567,10 @@ showTheme();
 /* ---------- go ---------- */
 function resize() { const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); cvs.style.width = '100%'; cvs.style.height = '100%'; camera.aspect = w / h; camera.updateProjectionMatrix(); }
 new ResizeObserver(resize).observe(stage); resize();
+if (PROPOSAL) {   // pre-load the suggestions once per page version; later visits keep whatever the person did with them
+  let done = false; try { done = !!localStorage.getItem(KEY + ':loaded'); } catch {}
+  if (!done) { loadAnswers(PROPOSAL); try { localStorage.setItem(KEY + ':loaded', '1'); } catch {} }
+}
 renderRows();
 (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
 </script>

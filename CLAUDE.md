@@ -4,7 +4,7 @@ A Claude skill (`fusion-parts-editor/`) that exports an open Fusion 360 assembly
 
 ## Rules
 - **The skill folder is the product.** `fusion-parts-editor/SKILL.md` is what Claude follows in a user's session, so keep it accurate when scripts or the page change. `<SKILL_DIR>` in it stands for the skill's own folder; do not put real machine paths in it.
-- **Never save the Fusion document, and never apply without a dry run first.** Linked parts stay locked unless the owner agrees in the conversation.
+- **Never save the Fusion document, and never apply without a dry run first.** Linked parts stay locked unless the owner's pasted ledger includes edits to them (the owner unlocked them or typed a library-file name in the page): the ledger is the go-ahead, so do not ask line by line. Stop only for CONFLICT, MISSING or FAILED lines, or a document mismatch.
 - **Identify parts by occurrence path**, never by `entityToken` or `Component.id` (they are not unique in real assemblies).
 - `fusion_export.py` and `fusion_apply.py` run inside Fusion's Python. Do not wrap `run()` in a blanket try/except (the tool returns the exception); catch only around optional property reads and around each single edit.
 - Run `npm test` after changing the page builder or the template. The Fusion scripts can only be checked in a real Fusion session; say so when reporting.

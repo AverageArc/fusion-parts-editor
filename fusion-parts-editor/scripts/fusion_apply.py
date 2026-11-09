@@ -2,7 +2,9 @@
 #
 # Run it through the Fusion MCP `execute` tool (featureType "script").
 # Before sending it, replace __PARAMS__ on the PARAMS line with a JSON object:
-#   {"answers_path": "C:/work/answers.json", "dry_run": true, "allow_linked": false}
+#   {"answers_path": "C:/work/answers.json", "dry_run": true, "allow_linked": false, "allow_source_rename": false}
+# "allow_source_rename" lets an edit rename the library FILE a linked part comes from (the answers carry "renameSource").
+# That renames the part in every design that uses the file, so set it only after the owner has agreed to the dry-run list.
 # ("answers": {...} with the object inline also works, but a file avoids quoting problems.)
 # Always run it once with "dry_run": true (and "readOnly": true on the tool call). A dry run changes nothing; it only
 # reports what would happen and which edits cannot be applied. Run it again with "dry_run": false to apply.
@@ -66,6 +68,7 @@ def run(_context: str):
             answers = json.load(fh)
     dry = bool(PARAMS.get('dry_run', True))
     allow_linked = bool(PARAMS.get('allow_linked', False)) and bool(answers.get('allowLinked', False))
+    allow_source = bool(PARAMS.get('allow_source_rename', False)) and bool(answers.get('allowSourceRename', False))
 
     if answers.get('document') != app.activeDocument.name:
         print('WARNING: these answers were made for "%s" but the active document is "%s".' % (answers.get('document'), app.activeDocument.name))
@@ -83,10 +86,34 @@ def run(_context: str):
 
     # ---- resolve every target before changing anything (renaming a component changes its occurrence paths) ----
     plan = []
+    source_work = []      # library files to rename, done last because renaming changes occurrence paths
+    seen_files = set()
     for e in answers.get('edits', []):
         who = e.get('partName', e.get('part'))
+        rs = e.get('renameSource')
+        if rs:
+            if not allow_source:
+                note('blocked', who, 'renaming the library file "%s" would rename it in every design that uses it. Not touched. Re-run with allow_source_rename after the user confirms.' % rs.get('from'))
+            elif rs['fileId'] in seen_files:
+                note('failed', who, 'the library file "%s" appears twice in the answers' % rs.get('from'))
+            else:
+                seen_files.add(rs['fileId'])
+                df = app.data.findFileById(rs['fileId'])
+                if df is None:
+                    note('missing', who, 'library file "%s" was not found (deleted, or no access)' % rs.get('from'))
+                elif df.name == rs['to']:
+                    note('already', who, 'library file is already named "%s"' % rs['to'])
+                elif df.name != rs.get('from'):
+                    note('conflict', who, 'library file was renamed since the export (was "%s", now "%s"); skipped' % (rs.get('from'), df.name))
+                elif df.isReadOnly:
+                    note('blocked', who, 'library file "%s" is read-only right now (someone may be editing it)' % df.name)
+                elif any(f.name == rs['to'] and f.id.split('?')[0] != rs['fileId'] for f in df.parentFolder.dataFiles.asArray()):
+                    note('conflict', who, 'a file named "%s" already exists in %s/%s; skipped' % (rs['to'], df.parentProject.name, df.parentFolder.name))
+                else:
+                    source_work.append((who, df, rs, len(e.get('paths', []))))
         if e.get('linked') and not allow_linked:
-            note('blocked', who, 'lives in another document (linked). Not touched. Re-run with allow_linked after the user confirms.')
+            if e.get('rename') or e.get('bodies'):
+                note('blocked', who, 'lives in another document (linked). Not touched. Re-run with allow_linked after the user confirms.')
             continue
         comps = []        # component definitions to edit (all copies of this part)
         if e['kind'] == 'root':
@@ -182,7 +209,26 @@ def run(_context: str):
             except Exception as ex:
                 note('failed', who, '%s -> "%s": %s' % (label, shown, str(ex).strip().splitlines()[-1][:120]))
 
+    # library files last: this changes the names (and occurrence paths) of linked parts everywhere the file is used
+    for who, df, rs, copies in source_work:
+        where = '%s/%s, v%s, %d cop%s here' % (df.parentProject.name, df.parentFolder.name, df.versionNumber, copies, 'y' if copies == 1 else 'ies')
+        if dry:
+            note('ok', who, 'rename library file "%s" -> "%s" (%s; also in every other design that uses it)' % (df.name, rs['to'], where))
+            continue
+        try:
+            df.name = rs['to']
+            note('ok', who, 'renamed library file to "%s" (%s)' % (rs['to'], where))
+        except Exception as ex:
+            note('failed', who, 'rename library file -> "%s": %s' % (rs['to'], str(ex).strip().splitlines()[-1][:120]))
+
     print(('DRY RUN (nothing was changed)' if dry else 'APPLIED (not saved)') + ' for "%s"' % app.activeDocument.name)
     for ln in lines:
         print(ln)
     print('SUMMARY ' + json.dumps(counts))
+    if not dry:
+        # edits on linked parts change the library documents themselves; list every open document with unsaved changes so the owner can save them
+        try:
+            unsaved = [d.name for d in app.documents if d.isModified]
+            print('UNSAVED DOCUMENTS (%d): %s. Nothing was saved; the owner decides.' % (len(unsaved), ', '.join(unsaved)))
+        except Exception:
+            pass   # an optional report: never let it hide the apply result
