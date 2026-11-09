@@ -1,0 +1,8 @@
+{
+  "name": "fusion-parts-editor-scripts",
+  "private": true,
+  "description": "Only the optional STEP shapes step (step_geometry.mjs) needs this package.",
+  "dependencies": {
+    "occt-import-js": "0.0.23"
+  }
+}

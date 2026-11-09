@@ -1,0 +1,39 @@
+{
+  "format": "fusion-parts-answers/1",
+  "document": "Demo bracket",
+  "exportedAt": "2026-01-01T00:00:00",
+  "allowLinked": false,
+  "edits": [
+    {
+      "part": "p0",
+      "kind": "root",
+      "linked": false,
+      "partName": "Body1",
+      "paths": [],
+      "bodies": [
+        {
+          "index": 0,
+          "bodyName": "Body1",
+          "was": { "name": "Body1", "material": "Aluminum 6061", "appearance": "Aluminum - Satin" },
+          "set": { "name": "Base plate" }
+        }
+      ]
+    },
+    {
+      "part": "p2",
+      "kind": "component",
+      "linked": false,
+      "partName": "Component1",
+      "paths": ["Component1:1", "Component1:2"],
+      "rename": { "from": "Component1", "to": "Corner bracket" },
+      "bodies": [
+        {
+          "index": 0,
+          "bodyName": "Body1",
+          "was": { "name": "Body1", "material": "ABS Plastic", "appearance": "ABS Plastic (White)" },
+          "set": { "material": "Aluminum 6061", "appearance": "Aluminum - Satin" }
+        }
+      ]
+    }
+  ]
+}

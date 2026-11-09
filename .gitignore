@@ -1,0 +1,7 @@
+node_modules/
+.env
+.dev.vars
+.DS_Store
+Thumbs.db
+# anything you export from a real assembly stays out of the repository
+assembly-work/

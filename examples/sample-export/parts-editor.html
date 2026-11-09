@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parts editor</title>
+<script>try{var t=localStorage.getItem('fpe-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<style>
+:root{
+  color-scheme: light dark;
+  --bg:#f4f4f1; --panel:#ffffff; --panel-2:#ecece7; --ink:#1b1b1a; --muted:#62625d; --line:#d9d9d2; --stage:#e9e9e4;
+  --accent:#2f6fd6; --on-accent:#fff; --warn:#b0620a; --ok:#2a8a4f; --bad:#c43b2f; --changed:#fff6d6; --focus:#1b1b1a;
+  --r:10px; --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; --mono:ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#151517; --panel:#1f1f22; --panel-2:#2a2a2e; --ink:#ececea; --muted:#a3a39d; --line:#34343a; --stage:#101012;
+    --accent:#6ea2ff; --on-accent:#101012; --warn:#f0a050; --ok:#5fd08a; --bad:#ff7a6e; --changed:#3a3417; --focus:#ececea;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#151517; --panel:#1f1f22; --panel-2:#2a2a2e; --ink:#ececea; --muted:#a3a39d; --line:#34343a; --stage:#101012;
+  --accent:#6ea2ff; --on-accent:#101012; --warn:#f0a050; --ok:#5fd08a; --bad:#ff7a6e; --changed:#3a3417; --focus:#ececea;
+}
+:root[data-theme="light"]{color-scheme:light}
+:root[data-theme="dark"]{color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--font);-webkit-font-smoothing:antialiased}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.app{display:grid;grid-template-columns:minmax(260px,.8fr) minmax(480px,1.5fr);height:100vh;height:100dvh}
+.viewer-col{position:relative;min-width:0}
+.stage{position:absolute;inset:0;background:var(--stage);overflow:hidden;touch-action:none}
+.stage canvas{display:block;width:100%;height:100%}
+.tools{position:absolute;left:10px;right:10px;top:10px;display:flex;flex-wrap:wrap;gap:6px;z-index:3;pointer-events:none}
+.tools>*{pointer-events:auto}
+.seg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:6px 10px;cursor:pointer;font-size:12.5px;white-space:nowrap}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button:hover{background:var(--panel-2)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.tip{position:absolute;z-index:4;pointer-events:none;background:var(--ink);color:var(--bg);border-radius:6px;padding:3px 8px;font-size:12px;white-space:nowrap}
+.tip[hidden]{display:none}
+.hint{position:absolute;left:10px;bottom:8px;z-index:3;font-size:11.5px;color:var(--muted);pointer-events:none}
+.panel-col{min-width:0;display:flex;flex-direction:column;border-left:1px solid var(--line);background:var(--bg);height:100vh;height:100dvh}
+.head{padding:12px 14px 6px}
+.head h1{margin:0;font-size:17px;line-height:1.25}
+.pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.pill{font-size:11.5px;border:1px solid var(--line);border-radius:99px;padding:1px 9px;color:var(--muted);background:var(--panel)}
+.pill.on{border-color:var(--accent);color:var(--accent)}
+.bar{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;padding:6px 14px 8px;border-bottom:1px solid var(--line)}
+.bar input[type=search],.bar select{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:5px 8px}
+.bar input[type=search]{flex:1;min-width:140px}
+.bar label{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:12.5px;cursor:pointer}
+.bulk{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;padding:8px 14px;background:var(--panel-2);border-bottom:1px solid var(--line)}
+.bulk[hidden]{display:none}
+.bulk input,.bulk select{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:4px 7px}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:5px 11px;cursor:pointer}
+.btn:hover{border-color:var(--ink)}
+.btn.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
+.btn.small{padding:2px 8px;font-size:12px}
+#rows{flex:1;overflow:auto;padding:8px 14px 14px;display:flex;flex-direction:column;gap:8px}
+.part{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px}
+.part.changed{border-color:var(--warn);background:linear-gradient(0deg,var(--panel),var(--panel)) padding-box}
+.part.sel{box-shadow:0 0 0 2px var(--accent)}
+.part.flash{animation:flash 1.1s}
+@keyframes flash{0%{background:var(--changed)}100%{background:var(--panel)}}
+.ph{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pname{flex:1;min-width:150px;font-weight:600;background:transparent;border:1px solid transparent;border-radius:6px;padding:2px 6px}
+.pname:hover,.pname:focus{border-color:var(--line);background:var(--panel-2)}
+.pname:disabled{opacity:.7}
+.badge{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:0 7px;color:var(--muted);white-space:nowrap}
+.badge.link{border-color:var(--warn);color:var(--warn)}
+.mass{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mass b{color:var(--warn)}
+.ppath{font-size:11.5px;color:var(--muted);margin:1px 0 4px 26px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.body{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px 8px;align-items:end;padding:5px 0 3px 26px;border-top:1px dashed var(--line)}
+.body:first-of-type{border-top:0}
+.f{display:flex;flex-direction:column;gap:1px;min-width:0}
+.f>span{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.f input[type=text]{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 6px;min-width:0}
+.f input.edited{border-color:var(--warn);background:var(--changed)}
+.f input.bad{border-color:var(--bad)}
+.f input:disabled{opacity:.55}
+.approw{display:flex;gap:4px;align-items:center}
+.sw{flex:none;width:16px;height:16px;border-radius:4px;border:1px solid var(--line)}
+input[type=color]{width:30px;height:24px;padding:0;border:1px solid var(--line);border-radius:5px;background:none;flex:none}
+.colrow{display:flex;gap:4px;align-items:center}
+.empty{color:var(--muted);padding:20px;text-align:center}
+.answers{border-top:1px solid var(--line);background:var(--panel);padding:8px 14px;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+.answers p{margin:0;flex-basis:100%;font-size:12px;color:var(--muted)}
+details.review{border-top:1px solid var(--line);padding:6px 14px;background:var(--panel);font-size:12.5px;max-height:30vh;overflow:auto}
+details.review summary{cursor:pointer;font-weight:600}
+details.review table{width:100%;border-collapse:collapse;margin-top:6px}
+details.review td{padding:2px 6px 2px 0;border-top:1px solid var(--line);vertical-align:top}
+details.review td.from{color:var(--muted);text-decoration:line-through}
+.modal{position:fixed;inset:0;background:rgb(0 0 0 / .5);display:grid;place-items:center;z-index:20}
+.modal[hidden]{display:none}
+.modal>div{background:var(--panel);border-radius:12px;padding:14px;width:min(640px,92vw)}
+.modal textarea{width:100%;height:260px;font:12px var(--mono);background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
+@media (max-width:900px){
+  .app{display:block;height:auto}
+  .viewer-col{height:44vh;position:sticky;top:0;z-index:5}
+  .panel-col{height:auto;border-left:0}
+  #rows{overflow:visible}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="viewer-col" aria-label="3D view">
+    <div class="stage" id="stage">
+      <div class="tools">
+        <div class="seg" role="group" aria-label="Views">
+          <button data-view="home">Home</button><button data-view="front">Front</button><button data-view="top">Top</button><button data-view="right">Right</button>
+        </div>
+        <div class="seg" role="group" aria-label="Display">
+          <button id="b-hidden" aria-pressed="false" title="Show parts that are hidden in Fusion, faintly">Show hidden</button>
+          <button id="b-isolate" aria-pressed="false" title="Show only the ticked parts">Isolate ticked</button>
+          <button id="b-up" title="Which axis points up in Fusion">Z up</button>
+          <button id="b-theme" title="Light, dark or automatic">◐ Auto</button>
+        </div>
+      </div>
+      <div class="tip" id="tip" hidden></div>
+      <div class="hint">Drag to rotate · wheel to zoom · middle/right-drag to pan · click a part to tick it</div>
+    </div>
+  </section>
+
+  <section class="panel-col" aria-label="Parts">
+    <div class="head"><h1 id="title"></h1><div class="pills" id="pills"></div></div>
+    <div class="bar">
+      <input type="search" id="q" placeholder="Search names, materials, paths" aria-label="Search parts">
+      <select id="filter" aria-label="Filter parts">
+        <option value="all">All parts</option><option value="changed">Changed</option><option value="unnamed">Default names (Body1, Component2…)</option>
+        <option value="linked">Linked from other files</option><option value="hidden">Hidden in Fusion</option><option value="nomat">No material</option>
+      </select>
+      <select id="sort" aria-label="Sort parts"><option value="tree">Assembly order</option><option value="mass">Heaviest first</option><option value="name">Name A to Z</option><option value="count">Most copies first</option></select>
+      <label title="Linked parts live in another Fusion file. Editing them changes that file too."><input type="checkbox" id="unlock"> Unlock linked</label>
+    </div>
+    <div class="bulk" id="bulk" hidden>
+      <b id="bulkCount"></b>
+      <select id="bulkAct" aria-label="Bulk action">
+        <option value="material">Set material</option><option value="appearance">Set appearance</option><option value="color">Set color</option>
+        <option value="find">Find and replace in names</option><option value="prefix">Add prefix to names</option><option value="suffix">Add suffix to names</option>
+        <option value="bodyname">Name bodies like their part</option>
+      </select>
+      <span id="bulkInputs"></span>
+      <button class="btn primary small" id="bulkGo">Apply</button>
+      <button class="btn small" id="bulkNone">Clear ticks</button>
+      <button class="btn small" id="bulkAll">Tick all shown</button>
+    </div>
+    <div id="rows"></div>
+    <details class="review" id="review"><summary id="reviewSum">Review changes</summary><div id="changes"></div></details>
+    <div class="answers">
+      <button class="btn primary" id="copy">Copy answers</button>
+      <button class="btn" id="download">Download .json</button>
+      <button class="btn" id="reset">Reset all</button>
+      <p>Nothing here changes Fusion. Click <b>Copy answers</b> and paste the result back to Claude, who will check it against the model and apply it.</p>
+    </div>
+  </section>
+</div>
+<div class="modal" id="modal" hidden><div><p>Select all, copy, and paste into the chat:</p><textarea id="modalText" readonly></textarea><p><button class="btn" id="modalClose">Close</button></p></div></div>
+<datalist id="dl-mat"></datalist><datalist id="dl-app"></datalist>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const A = {"format":"fusion-assembly-export/2","document":{"name":"Demo bracket"},"exportedAt":"2026-01-01T00:00:00","units":"mm","upAxis":"Z","transformMaxErrorMm":0,"parts":[{"id":"p0","kind":"root","name":"Body1","referenced":false,"paths":[],"instances":1,"bodies":[{"index":0,"name":"Body1","material":"Aluminum 6061","appearance":"Aluminum - Satin","color":"#c4c8cf","massG":64.8,"volumeMm3":24000,"bboxMm":[-40,-25,-3,40,25,3],"hiddenInDefinition":false,"triangles":12}],"rootBodyIndex":0},{"id":"p1","kind":"root","name":"Body2","referenced":false,"paths":[],"instances":1,"bodies":[{"index":0,"name":"Body2","material":"Aluminum 6061","appearance":"Aluminum - Satin","color":"#c4c8cf","massG":51.84,"volumeMm3":19200,"bboxMm":[-40,-3,-20,40,3,20],"hiddenInDefinition":false,"triangles":12}],"rootBodyIndex":1},{"id":"p2","kind":"component","name":"Component1","referenced":false,"paths":["Component1:1","Component1:2"],"instances":2,"bodies":[{"index":0,"name":"Body1","material":"ABS Plastic","appearance":"ABS Plastic (White)","color":"#ecebe6","massG":1.058,"volumeMm3":1008,"bboxMm":[-7,-9,-2,7,9,2],"hiddenInDefinition":false,"triangles":12},{"index":1,"name":"Body2","material":"ABS Plastic","appearance":"ABS Plastic (White)","color":"#ecebe6","massG":0.941,"volumeMm3":896,"bboxMm":[-7,-2,-8,7,2,8],"hiddenInDefinition":false,"triangles":12}]},{"id":"p3","kind":"component","name":"M3x8 screw","referenced":true,"paths":["M3x8 screw:1","M3x8 screw:2","M3x8 screw:3","M3x8 screw:4"],"instances":4,"bodies":[{"index":0,"name":"Body1","material":"Steel","appearance":"Steel - Satin","color":"#8f949c","massG":0.437,"volumeMm3":55.6,"bboxMm":[-1.5,-1.5,-4,1.5,1.5,4],"hiddenInDefinition":false,"triangles":80}]},{"id":"p4","kind":"component","name":"M3 WASHER","referenced":false,"paths":["M3 WASHER:1","M3 WASHER:2","M3 WASHER:3","M3 WASHER:4"],"instances":4,"bodies":[{"index":0,"name":"Body1","material":"Steel","appearance":"Steel - Satin","color":"#8f949c","massG":0.093,"volumeMm3":11.9,"bboxMm":[-3.2,-3.2,-0.25,3.2,3.2,0.25],"hiddenInDefinition":false,"triangles":160}]}],"instances":[{"partId":"p0","bodyIndex":0,"path":"","visible":true,"matrix":[[1,0,0,0],[0,1,0,0],[0,0,1,3],[0,0,0,1]]},{"partId":"p1","bodyIndex":0,"path":"","visible":true,"matrix":[[1,0,0,0],[0,1,0,-22],[0,0,1,26],[0,0,0,1]]},{"partId":"p2","bodyIndex":0,"path":"Component1:1","visible":true,"matrix":[[1,0,0,-24],[0,1,0,-6],[0,0,1,8],[0,0,0,1]]},{"partId":"p2","bodyIndex":1,"path":"Component1:1","visible":true,"matrix":[[1,0,0,-24],[0,1,0,-6],[0,0,1,8],[0,0,0,1]]},{"partId":"p2","bodyIndex":0,"path":"Component1:2","visible":true,"matrix":[[1,0,0,24],[0,1,0,-6],[0,0,1,8],[0,0,0,1]]},{"partId":"p2","bodyIndex":1,"path":"Component1:2","visible":true,"matrix":[[1,0,0,24],[0,1,0,-6],[0,0,1,8],[0,0,0,1]]},{"partId":"p3","bodyIndex":0,"path":"M3x8 screw:1","visible":true,"matrix":[[1,0,0,-24],[0,1,0,-6],[0,0,1,14],[0,0,0,1]]},{"partId":"p4","bodyIndex":0,"path":"M3 WASHER:1","visible":true,"matrix":[[1,0,0,-24],[0,1,0,-6],[0,0,1,10.25],[0,0,0,1]]},{"partId":"p3","bodyIndex":0,"path":"M3x8 screw:2","visible":true,"matrix":[[1,0,0,24],[0,1,0,-6],[0,0,1,14],[0,0,0,1]]},{"partId":"p4","bodyIndex":0,"path":"M3 WASHER:2","visible":true,"matrix":[[1,0,0,24],[0,1,0,-6],[0,0,1,10.25],[0,0,0,1]]},{"partId":"p3","bodyIndex":0,"path":"M3x8 screw:3","visible":true,"matrix":[[1,0,0,-24],[0,1,0,6],[0,0,1,14],[0,0,0,1]]},{"partId":"p4","bodyIndex":0,"path":"M3 WASHER:3","visible":true,"matrix":[[1,0,0,-24],[0,1,0,6],[0,0,1,10.25],[0,0,0,1]]},{"partId":"p3","bodyIndex":0,"path":"M3x8 screw:4","visible":true,"matrix":[[1,0,0,24],[0,1,0,6],[0,0,1,14],[0,0,0,1]]},{"partId":"p4","bodyIndex":0,"path":"M3 WASHER:4","visible":true,"matrix":[[1,0,0,24],[0,1,0,6],[0,0,1,10.25],[0,0,0,1]]}],"libraries":{"materials":[{"name":"Aluminum 6061","density":2700},{"name":"Steel","density":7850},{"name":"ABS Plastic","density":1050},{"name":"Brass","density":8500},{"name":"Stainless Steel AISI 304","density":8000}],"appearances":[{"name":"Aluminum - Satin","color":"#c4c8cf"},{"name":"Steel - Satin","color":"#8f949c"},{"name":"ABS Plastic (White)","color":"#ecebe6"},{"name":"Brass - Polished","color":"#c9a64a"},{"name":"Stainless Steel - Satin","color":"#b5b9c0"},{"name":"Paint - Enamel Glossy (Red)","color":"#b3262b"}]}};
+const G = {"meshes":[{"key":"p0:0","vo":0,"vn":8,"io":0,"in":36,"c":[0,0,0],"k":0.00125},{"key":"p1:0","vo":8,"vn":8,"io":36,"in":36,"c":[0,0,0],"k":0.00125},{"key":"p2:0","vo":16,"vn":8,"io":72,"in":36,"c":[0,0,0],"k":0.00028125},{"key":"p2:1","vo":24,"vn":8,"io":108,"in":36,"c":[0,0,0],"k":0.00025},{"key":"p3:0","vo":32,"vn":42,"io":144,"in":240,"c":[0,0,0],"k":0.000125},{"key":"p4:0","vo":74,"vn":80,"io":384,"in":480,"c":[0,0,0],"k":0.0001}],"pn":462,"pad":0,"blob":"eNrtlU1PFEkcxkuGtxIBefF15FVAGscRR0RemkF2lmVnWdRvIHvwZDbRmJiYWAlJmxgPBmPixYPBb6AXbyRL0gknDsYTcoAQj1y89HnzVH6T1FfYrCTTz6+e/7/66dBV1SY5+LSRGeevSf9tsb8mB59WrfxVK1/sr8lGtrZlnL8mq1bsr/LL3i97v+z98vZ7k0x/n/5L1+33xnl2npPtvPztvHzPbju/8eafA5Os/q3rxptbfWJdve+877zvvO8OisaY5G3hWZtJjoZf5U3yKn80bJJnbW8LJjHmoGiS5z/Ej7/L7/6mngdf1d//RXMffH3+Q/7j7+rp/qb+B181t/+L7iN+lZd/NKyetwX1+1znc53PdT7X+Vznc53PdT7X+Vznc53PdT7X+Vznc53PdT7X+Vznc53PdT7XGf0l/uo0irPDJx9G4mzg/tNqnD2tDtyPsw8jh0/iTB1xdm9X/OKz/P136ul9qX7dQ3xvV/6Lz+rZf6f+3pd+bqL7iJ9W5Q/cV8/hE/UrN7XKTa1yU6vc1Co3tcpNrXJTq9zUKje1yk2tcsX3duW/+Kye/Xfq733p5ya6j1i5ur96lJtqTZk4ezR7tyvOXpc2h+Jsc+h1Kc7udj2a1TOvlePs45G4sif/4Y561lP1r21p7nr68Uh+ZU89D3fUv576uVu6j3hzSP7rknoezapfualVbmqVm1rlpla5eua1cmqVm1rlpla5qVVuqp1hxB+P5Ff21PNwR/3rqZ+7pfuIlav7q0e5/r9h6owxx/iJc8aYemNMgzGmEW2CDX31aANcRz3Hr5E5JqjXwY3MzTE/R28D/T+f57/1PKp1o6cCrmMsPR1wjrH0TMD1jKVnA25gLD0XcCNj6fmAmxhL8wE3M5ZeCNgylvYEfJyxtDfgFsbSvoBPMJb2B9zKWDoQcBtj6WDA7YylFwM+yVg6FHAHY+lwwJ2MpSMBdzGWXgrYMDa8Q/Eo71J/Ef4p/No6jPBO4+eoRXhn8OupRXhn8WtrMsI7h19byxHeefza2o7w8vjN1CK8C/iWWoTXg3+cWoTXi99CLcLrwz9BLcLrx2+lFuEN4LdRi/AG8dupRXgX8U9Si/CG8DuoRXjD+J3UIrwR/C5qEV7tPRpqEV73z/37v9i/Me9cOgdH8Bhahsfgy+g8fBkuoLfgAnwFXYCvwEX0F7gIX0Ur8FV4HP0VHoevoYvwNbiE/gaX4OvoEnwdnkB/hyfgG2gVvgFPon/Ak/BNdBm+CU+hf8JT8DS6Ak/DM+hteAaeRe/As/AoGgd7epT3WTujjwXn9Bw8x5zaeT0GjwX7/DTv/BQ6R22M91+H5oJzfR6eZ06OngJcCM6Fs6yRM+g8tQLrpR5tCL4DC/ACcxroKcLF4Bw5z5o6hy5QK7K+GtGm4LtRgSvMaaJnHB4Pzp0LrME8WqE2znpsRm3wnVmEF5lj6SnBpeCc6mXN9qCL1Eqs3+NoS/BdWoKXmNNCzwQ8EZxr/azxPnSJ2gTr/QTaGnzHqnCVOa30TMKTwTk4yJ4YQKvUJtkfbWh78N1bhpeZ007PFDwVnJtD7KGL6DK1KfbTSbQj+E6uwCvM6aBnBp4JztkR9twwukJthv3XiXYF39U78B3mdNFT+w6PBudyN3vwEqo5/wKTxun4"};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const parts = A.parts, byId = Object.fromEntries(parts.map(p => [p.id, p]));
+const LIB_MAT = new Map(A.libraries.materials.map(m => [m.name, m])), LIB_APP = new Map(A.libraries.appearances.map(a => [a.name, a]));
+$('#title').textContent = A.document.name;
+document.title = 'Parts editor: ' + A.document.name;
+$('#dl-mat').innerHTML = A.libraries.materials.map(m => `<option value="${esc(m.name)}">${m.density ? m.density + ' kg/m³' : ''}</option>`).join('');
+$('#dl-app').innerHTML = A.libraries.appearances.map(a => `<option value="${esc(a.name)}">${a.color || ''}</option>`).join('');
+
+/* ---------- geometry ---------- */
+const bin = atob(G.blob), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+const buf = await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer();
+const P = new Int16Array(buf, 0, G.pn), I = new Uint32Array(buf, G.pn * 2 + G.pad);
+const geoByKey = {};
+for (const m of G.meshes) {
+  const pa = new Float32Array(m.vn * 3);
+  for (let i = 0; i < pa.length; i += 3) for (let k = 0; k < 3; k++) pa[i + k] = P[m.vo * 3 + i + k] * m.k + m.c[k];
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pa, 3)); g.setIndex(new THREE.BufferAttribute(I.slice(m.io, m.io + m.in), 1));
+  g.computeVertexNormals(); g.computeBoundingBox(); geoByKey[m.key] = g;
+}
+
+/* ---------- scene ---------- */
+const stage = $('#stage'), css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(Math.max(devicePixelRatio, 1.5), 2)); stage.prepend(renderer.domElement);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.3;
+const scene = new THREE.Scene(); scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(30, 1, 0.5, 20000);
+const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.dampingFactor = .08; controls.screenSpacePanning = true;
+controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
+const model = new THREE.Group(); scene.add(model);
+let upAxis = A.upAxis === 'Y' ? 'Y' : 'Z';
+const setUp = () => { model.rotation.x = upAxis === 'Z' ? -Math.PI / 2 : 0; $('#b-up').textContent = upAxis + ' up'; model.updateMatrixWorld(true); };
+setUp();
+scene.add(new THREE.HemisphereLight(0xffffff, 0x555566, .45));
+const key = new THREE.DirectionalLight(0xffffff, 1.2); key.position.set(120, 200, 220); scene.add(key);
+const themeBg = () => renderer.setClearColor(css('--stage')); themeBg();
+new MutationObserver(themeBg).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeBg);
+
+const matByBody = {}, meshesByPart = {};
+const colorOf = (pid, k) => {
+  const c = cur(pid, k, 'customColor'); if (c) return c;
+  const an = cur(pid, k, 'appearance'); const ac = an && LIB_APP.get(an)?.color; if (ac && an !== parts_orig(pid, k).appearance) return ac;
+  return parts_orig(pid, k).color || '#b9bcc4';
+};
+const parts_orig = (pid, k) => byId[pid].bodies[k];
+for (const inst of A.instances) {
+  const g = geoByKey[inst.partId + ':' + inst.bodyIndex]; if (!g) continue;
+  const bk = inst.partId + ':' + inst.bodyIndex;
+  const mat = matByBody[bk] || (matByBody[bk] = new THREE.MeshStandardMaterial({ color: parts_orig(inst.partId, inst.bodyIndex).color || '#b9bcc4', metalness: .25, roughness: .5, transparent: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+  const mesh = new THREE.Mesh(g, mat); mesh.matrixAutoUpdate = false;
+  mesh.matrix.set(...inst.matrix.flat()); mesh.userData = { pid: inst.partId, k: inst.bodyIndex, hidden: !inst.visible, path: inst.path };
+  const edges = new THREE.LineSegments(g.userData.edges || (g.userData.edges = new THREE.EdgesGeometry(g, 30)), new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: .35 }));
+  edges.matrixAutoUpdate = false; edges.matrix.copy(mesh.matrix); mesh.userData.edges = edges;
+  model.add(mesh, edges); (meshesByPart[inst.partId] ||= []).push(mesh);
+}
+const allMeshes = Object.values(meshesByPart).flat();
+function frameAll() {
+  const box = new THREE.Box3(); model.updateMatrixWorld(true);
+  for (const m of allMeshes) if (!m.userData.hidden) box.union(m.geometry.boundingBox.clone().applyMatrix4(m.matrix).applyMatrix4(model.matrixWorld));
+  if (box.isEmpty()) box.set(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50));
+  const c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2;
+  return { c, r };
+}
+let HOME = frameAll();
+const VIEWS = { // directions in model space (the space Fusion uses), per up axis
+  Z: { home: [1, -1.1, .8], front: [0, -1, 0], top: [.0001, -.0001, 1], right: [1, 0, 0] },
+  Y: { home: [1.1, .8, 1], front: [0, 0, 1], top: [.0001, 1, .0001], right: [1, 0, 0] } };
+function goHome(name = 'home') {
+  HOME = frameAll(); const d = HOME.r / Math.tan(THREE.MathUtils.degToRad(15)) * 1.15;
+  const dir = new THREE.Vector3(...VIEWS[upAxis][name]).applyEuler(model.rotation).normalize();
+  controls.target.copy(HOME.c); camera.position.copy(HOME.c).addScaledVector(dir, d); controls.minDistance = HOME.r * .05; controls.maxDistance = HOME.r * 12; controls.update();
+}
+goHome();
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => goHome(b.dataset.view));
+$('#b-up').onclick = () => { upAxis = upAxis === 'Z' ? 'Y' : 'Z'; setUp(); goHome(); };
+
+/* zoom toward the pointer, stop before the surface; middle button pans, double-press goes home */
+const zRay = new THREE.Raycaster(), zPtr = new THREE.Vector2(), cvs = renderer.domElement;
+const pickables = () => allMeshes.filter(m => m.visible);
+stage.addEventListener('wheel', e => {
+  if (e.target !== cvs) return; e.preventDefault(); e.stopPropagation();
+  const r = cvs.getBoundingClientRect(); zPtr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); zRay.setFromCamera(zPtr, camera);
+  const hit = zRay.intersectObjects(pickables(), false)[0];
+  const pivot = hit ? hit.point.clone() : camera.position.clone().addScaledVector(zRay.ray.direction, camera.position.distanceTo(controls.target));
+  const f = Math.exp(Math.max(-150, Math.min(150, e.deltaY)) * 0.0016), d = camera.position.distanceTo(pivot); let nd = d * f;
+  const minGap = HOME.r * .01; if (f < 1) nd = Math.max(nd, Math.min(d, hit ? minGap : HOME.r * .05)); else if (camera.position.distanceTo(HOME.c) > HOME.r * 12) nd = d;
+  const s = nd / d; camera.position.sub(pivot).multiplyScalar(s).add(pivot); controls.target.sub(pivot).multiplyScalar(s).add(pivot); controls.update();
+}, { capture: true, passive: false });
+let lastMid = 0;
+cvs.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
+cvs.addEventListener('pointerdown', e => { if (e.button !== 1) return; const n = performance.now(); if (n - lastMid < 400) { lastMid = 0; goHome(); } else lastMid = n; });
+
+/* ---------- edit state ---------- */
+const KEY = 'fpe:' + A.document.name + ':' + A.exportedAt;
+let E = {}; try { E = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(E)); } catch {} };
+const bk = (pid, k) => pid + ':' + k;
+function cur(pid, k, f) { const e = E[bk(pid, k)]; if (e && f in e) return e[f]; return f === 'customColor' ? null : byId[pid].bodies[k]?.[f]; }
+function curName(pid) { const e = E[pid]; return e && 'name' in e ? e.name : byId[pid].name; }
+function setBody(pid, k, f, v) {
+  const key = bk(pid, k), e = E[key] || (E[key] = {}); const o = f === 'customColor' ? null : byId[pid].bodies[k][f]; const nv = (v === '' || v === undefined) ? null : v;
+  if ((nv ?? '') === (o ?? '')) delete e[f]; else e[f] = nv;
+  if (!Object.keys(e).length) delete E[key]; save();
+}
+function setPartName(pid, v) {
+  const p = byId[pid]; if (p.kind === 'root') return setBody(pid, 0, 'name', v);
+  const e = E[pid] || (E[pid] = {}); if (v === p.name || v === '') delete e.name; else e.name = v; if (!Object.keys(e).length) delete E[pid]; save();
+}
+const partChanged = pid => !!E[pid] || byId[pid].bodies.some((_, k) => E[bk(pid, k)]);
+const changedParts = () => parts.filter(p => partChanged(p.id));
+let unlocked = false; const locked = p => p.referenced && !unlocked;
+const isDefaultName = n => /^(Body|Component|Part|Untitled|Solid|Surface)\s*\(?\d*\)?$/i.test((n || '').trim());
+const fmtG = g => g >= 100 ? g.toFixed(0) + ' g' : g >= 10 ? g.toFixed(1) + ' g' : g.toFixed(2) + ' g';
+function bodyMass(pid, k) {
+  const b = byId[pid].bodies[k], mname = cur(pid, k, 'material'); const d = LIB_MAT.get(mname)?.density;
+  return { orig: b.massG, now: mname !== b.material && d ? b.volumeMm3 * d * 1e-6 : b.massG };
+}
+const partMass = pid => { let o = 0, n = 0; byId[pid].bodies.forEach((_, k) => { const m = bodyMass(pid, k); o += m.orig; n += m.now; }); const c = byId[pid].instances; return { orig: o * c, now: n * c }; };
+
+/* ---------- rows ---------- */
+let sel = new Set(), hover = null;
+const rowsEl = $('#rows');
+function matches(p) {
+  const q = $('#q').value.trim().toLowerCase(), f = $('#filter').value;
+  if (q) { const hay = [curName(p.id), p.name, p.paths[0] || '', ...p.bodies.flatMap((b, k) => [cur(p.id, k, 'name'), cur(p.id, k, 'material'), cur(p.id, k, 'appearance')])].join(' ').toLowerCase(); if (!hay.includes(q)) return false; }
+  if (f === 'changed') return partChanged(p.id);
+  if (f === 'linked') return p.referenced;
+  if (f === 'unnamed') return isDefaultName(curName(p.id)) || p.bodies.some((_, k) => isDefaultName(cur(p.id, k, 'name')));
+  if (f === 'hidden') return A.instances.some(i => i.partId === p.id && !i.visible);
+  if (f === 'nomat') return p.bodies.some((_, k) => !cur(p.id, k, 'material') || cur(p.id, k, 'material') === 'Air');
+  return true;
+}
+function shown() {
+  const s = $('#sort').value, l = parts.filter(matches);
+  if (s === 'mass') l.sort((a, b) => partMass(b.id).orig - partMass(a.id).orig);
+  else if (s === 'name') l.sort((a, b) => curName(a.id).localeCompare(curName(b.id), undefined, { numeric: true }));
+  else if (s === 'count') l.sort((a, b) => b.instances - a.instances);
+  return l;
+}
+function rowHtml(p) {
+  const lk = locked(p), pid = p.id, ch = partChanged(pid);
+  const hiddenN = A.instances.filter(i => i.partId === pid && !i.visible).length;
+  const pm = partMass(pid), massTxt = p.bodies.length ? (Math.abs(pm.now - pm.orig) > 1e-6 ? `${fmtG(pm.orig)} → <b>${fmtG(pm.now)}</b>` : fmtG(pm.orig)) : 'assembly';
+  const nameVal = p.kind === 'root' ? cur(pid, 0, 'name') : curName(pid);
+  const nameOrig = p.kind === 'root' ? p.bodies[0].name : p.name;
+  const nameDisabled = lk || (p.kind === 'component' && p.referenced);
+  const bodies = p.bodies.map((b, k) => {
+    const mat = cur(pid, k, 'material'), app = cur(pid, k, 'appearance'), col = cur(pid, k, 'customColor');
+    const bn = cur(pid, k, 'name'), ed = f => (E[bk(pid, k)] && f in E[bk(pid, k)]) ? 'edited' : '';
+    const matBad = mat && !LIB_MAT.has(mat) && mat !== b.material ? 'bad' : '', appBad = app && !LIB_APP.has(app) && app !== b.appearance ? 'bad' : '';
+    const sw = col || (LIB_APP.get(app)?.color) || b.color || 'transparent';
+    return `<div class="body" data-k="${k}">
+      ${p.kind === 'root' ? '' : `<label class="f"><span>Body name</span><input type="text" data-f="name" class="${ed('name')}" value="${esc(bn)}" ${lk ? 'disabled' : ''}></label>`}
+      <label class="f"><span>Material</span><input type="text" list="dl-mat" data-f="material" class="${ed('material')} ${matBad}" value="${esc(mat || '')}" placeholder="none" ${lk ? 'disabled' : ''}></label>
+      <div class="f"><span>Appearance</span><div class="approw"><i class="sw" style="background:${sw}"></i><input type="text" list="dl-app" data-f="appearance" class="${ed('appearance')} ${appBad}" value="${esc(app || '')}" ${lk ? 'disabled' : ''}></div></div>
+      <div class="f"><span>Custom color</span><div class="colrow"><input type="color" data-f="customColor" value="${col || b.color || '#b9bcc4'}" ${lk ? 'disabled' : ''}><button class="btn small" data-clr ${col ? '' : 'hidden'} title="Remove the custom color">×</button></div></div>
+    </div>`;
+  }).join('');
+  return `<article class="part ${ch ? 'changed' : ''} ${sel.has(pid) ? 'sel' : ''}" data-pid="${pid}">
+    <div class="ph"><input type="checkbox" class="pick" ${sel.has(pid) ? 'checked' : ''} aria-label="Tick ${esc(nameOrig)}">
+      <input class="pname" data-pname value="${esc(nameVal)}" ${nameDisabled ? 'disabled' : ''} title="${p.kind === 'root' ? 'Body name' : p.referenced ? 'Linked parts cannot be renamed from here' : 'Component name (renames every copy)'}" aria-label="Name">
+      <span class="badge">×${p.instances}</span>${p.kind === 'root' ? '<span class="badge">body</span>' : ''}${p.referenced ? '<span class="badge link" title="Lives in another Fusion file">linked</span>' : ''}${hiddenN ? `<span class="badge">${hiddenN === p.instances ? 'hidden' : hiddenN + ' hidden'}</span>` : ''}
+      <span class="mass">${massTxt}</span></div>
+    <div class="ppath" title="${esc(p.paths.join('\n'))}">${esc(p.paths[0] || '(top level)')}${p.paths.length > 1 ? ` + ${p.paths.length - 1} more` : ''}</div>
+    ${bodies || '<div class="body"><span class="mass">An assembly container with no bodies of its own. Only its name can change.</span></div>'}
+  </article>`;
+}
+function renderRows() {
+  const l = shown();
+  rowsEl.innerHTML = l.length ? l.map(rowHtml).join('') : '<div class="empty">No parts match.</div>';
+  renderSummary(); refreshScene();
+}
+function renderSummary() {
+  const n = changedParts().length, nb = parts.reduce((a, p) => a + p.bodies.length, 0), linked = parts.filter(p => p.referenced).length;
+  const edits = Object.values(E).reduce((a, e) => a + Object.keys(e).length, 0);
+  $('#pills').innerHTML = `<span class="pill">${parts.length} parts</span><span class="pill">${nb} bodies</span><span class="pill">${A.instances.length} placed copies</span>${linked ? `<span class="pill">${linked} linked</span>` : ''}<span class="pill ${edits ? 'on' : ''}">${edits} edit${edits === 1 ? '' : 's'} in ${n} part${n === 1 ? '' : 's'}</span>`;
+  const sc = sel.size; $('#bulk').hidden = !sc; $('#bulkCount').textContent = sc + ' ticked';
+  $('#reviewSum').textContent = `Review changes (${edits})`;
+  const rows = [];
+  for (const p of changedParts()) {
+    const e = E[p.id]; if (e?.name) rows.push([p.name, 'component name', p.name, e.name, p.referenced]);
+    p.bodies.forEach((b, k) => { const be = E[bk(p.id, k)]; if (!be) return; const lab = (p.kind === 'root' ? '' : p.name + ' / ') + b.name;
+      for (const [f, v] of Object.entries(be)) rows.push([lab, f === 'customColor' ? 'custom color' : f, f === 'customColor' ? '(unchanged)' : b[f] ?? '(none)', v ?? '(none)', p.referenced]); });
+  }
+  $('#changes').innerHTML = rows.length ? `<table>${rows.map(r => `<tr><td>${esc(r[0])}${r[4] ? ' <span class="badge link">linked</span>' : ''}</td><td>${r[1]}</td><td class="from">${esc(r[2])}</td><td>${esc(r[3])}</td></tr>`).join('')}</table>` : '<p class="empty">No changes yet.</p>';
+}
+function updateRow(pid) { const el = rowsEl.querySelector(`[data-pid="${pid}"]`); if (!el) return; const tmp = document.createElement('div'); tmp.innerHTML = rowHtml(byId[pid]); const nu = tmp.firstElementChild;
+  // keep the focused input alive while the user types: only refresh header flags, mass and swatches
+  el.classList.toggle('changed', partChanged(pid)); el.querySelector('.mass').innerHTML = nu.querySelector('.mass').innerHTML;
+  el.querySelectorAll('.body').forEach((bd, i) => { const nb = nu.querySelectorAll('.body')[i]; if (!nb) return; bd.querySelector('.sw') && (bd.querySelector('.sw').style.background = nb.querySelector('.sw').style.background);
+    bd.querySelectorAll('input[type=text]').forEach((inp, j) => { const ni = nb.querySelectorAll('input[type=text]')[j]; if (ni) inp.className = ni.className; });
+    const cl = bd.querySelector('[data-clr]'); if (cl) cl.hidden = nb.querySelector('[data-clr]').hidden; });
+  renderSummary(); refreshScene(); }
+
+rowsEl.addEventListener('input', e => {
+  const art = e.target.closest('.part'); if (!art) return; const pid = art.dataset.pid, t = e.target;
+  if (t.matches('[data-pname]')) { setPartName(pid, t.value); updateRow(pid); return; }
+  const bd = t.closest('.body'); if (!bd || !t.dataset.f) return; const k = +bd.dataset.k;
+  setBody(pid, k, t.dataset.f, t.value); updateRow(pid);
+});
+rowsEl.addEventListener('click', e => {
+  const art = e.target.closest('.part'); if (!art) return; const pid = art.dataset.pid;
+  if (e.target.matches('.pick')) { e.target.checked ? sel.add(pid) : sel.delete(pid); art.classList.toggle('sel', sel.has(pid)); renderSummary(); refreshScene(); return; }
+  if (e.target.matches('[data-clr]')) { const k = +e.target.closest('.body').dataset.k; setBody(pid, k, 'customColor', null); updateRow(pid); art.querySelector(`.body[data-k="${k}"] input[type=color]`).value = byId[pid].bodies[k].color || '#b9bcc4'; return; }
+});
+rowsEl.addEventListener('mouseover', e => { const art = e.target.closest('.part'); const pid = art?.dataset.pid || null; if (pid !== hover) { hover = pid; refreshScene(); } });
+rowsEl.addEventListener('mouseleave', () => { hover = null; refreshScene(); });
+['q', 'filter', 'sort'].forEach(id => $('#' + id).addEventListener('input', renderRows));
+$('#unlock').addEventListener('change', e => { unlocked = e.target.checked; renderRows(); });
+
+/* ---------- scene highlighting ---------- */
+let showHidden = false, isolate = false;
+const ACC = new THREE.Color();
+function refreshScene() {
+  ACC.set(css('--accent'));
+  const iso = isolate && sel.size;
+  for (const [key, mat] of Object.entries(matByBody)) { const [pid, k] = key.split(':'); mat.color.set(colorOf(pid, +k)); }
+  for (const m of allMeshes) {
+    const { pid, hidden } = m.userData, mat = m.material, picked = sel.has(pid), hov = hover === pid;
+    let vis = !hidden || showHidden; if (iso && !picked) vis = false;
+    m.visible = vis; m.userData.edges.visible = vis;
+    mat.opacity = hidden ? .3 : 1; mat.depthWrite = !hidden;
+    const k = picked ? .55 : hov ? .8 : 0; mat.emissive.copy(ACC).multiplyScalar(k * .5);
+    m.userData.edges.material.opacity = hidden ? .1 : .35;
+  }
+}
+$('#b-hidden').onclick = e => { showHidden = !showHidden; e.currentTarget.setAttribute('aria-pressed', showHidden); refreshScene(); };
+$('#b-isolate').onclick = e => { isolate = !isolate; e.currentTarget.setAttribute('aria-pressed', isolate); refreshScene(); };
+
+/* click a part in 3D to tick it; hover shows its name */
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(), tip = $('#tip');
+function pick(ev) { const r = cvs.getBoundingClientRect(); ptr.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(ptr, camera); const h = ray.intersectObjects(pickables(), false)[0]; return h ? h.object.userData.pid : null; }
+let down = null, lastMove = 0;
+cvs.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; tip.hidden = true; });
+cvs.addEventListener('pointerup', e => {
+  if (!down || e.button !== 0) { down = null; return; } const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = performance.now() - down.t; down = null; if (moved > 5 || dt > 500) return;
+  const pid = pick(e); if (!pid) { if (!e.shiftKey) { sel.clear(); renderRows(); } return; }
+  if (e.shiftKey || e.ctrlKey || e.metaKey) { sel.has(pid) ? sel.delete(pid) : sel.add(pid); } else { sel = new Set([pid]); }
+  if ($('#filter').value !== 'all' && !matches(byId[pid])) { $('#filter').value = 'all'; }
+  renderRows(); const el = rowsEl.querySelector(`[data-pid="${pid}"]`); if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1100); }
+});
+cvs.addEventListener('pointermove', e => {
+  if (e.buttons) { tip.hidden = true; return; } const n = performance.now(); if (n - lastMove < 40) return; lastMove = n;
+  const pid = pick(e); if (pid !== hover) { hover = pid; refreshScene(); }
+  if (pid) { const r = stage.getBoundingClientRect(); tip.textContent = curName(pid) + (byId[pid].instances > 1 ? ` ×${byId[pid].instances}` : ''); tip.style.left = (e.clientX - r.left + 14) + 'px'; tip.style.top = (e.clientY - r.top + 14) + 'px'; tip.hidden = false; } else tip.hidden = true;
+});
+cvs.addEventListener('pointerleave', () => { tip.hidden = true; hover = null; refreshScene(); });
+
+/* ---------- bulk actions ---------- */
+function bulkInputs() {
+  const a = $('#bulkAct').value, h = {
+    material: '<input type="text" id="bv" list="dl-mat" placeholder="material name" size="26">', appearance: '<input type="text" id="bv" list="dl-app" placeholder="appearance name" size="26">',
+    color: '<input type="color" id="bv" value="#8a8f98">', find: '<input type="text" id="bv" placeholder="find" size="12"> → <input type="text" id="bv2" placeholder="replace with" size="12"> <label><input type="checkbox" id="bre"> regex</label>',
+    prefix: '<input type="text" id="bv" placeholder="prefix" size="14">', suffix: '<input type="text" id="bv" placeholder="suffix" size="14">', bodyname: '' };
+  $('#bulkInputs').innerHTML = h[a];
+}
+$('#bulkAct').addEventListener('change', bulkInputs); bulkInputs();
+$('#bulkNone').onclick = () => { sel.clear(); renderRows(); };
+$('#bulkAll').onclick = () => { shown().forEach(p => sel.add(p.id)); renderRows(); };
+$('#bulkGo').onclick = () => {
+  const a = $('#bulkAct').value, v = $('#bv')?.value ?? '', v2 = $('#bv2')?.value ?? ''; let n = 0, skipped = 0;
+  for (const pid of sel) { const p = byId[pid]; if (locked(p)) { skipped++; continue; }
+    if (a === 'material' || a === 'appearance') { if (!v) continue; p.bodies.forEach((_, k) => setBody(pid, k, a, v)); n++; }
+    else if (a === 'color') { p.bodies.forEach((_, k) => setBody(pid, k, 'customColor', v)); n++; }
+    else if (a === 'bodyname') { p.bodies.forEach((_, k) => { if (p.kind !== 'root') setBody(pid, k, 'name', p.bodies.length > 1 ? curName(pid) + ' ' + (k + 1) : curName(pid)); }); n++; }
+    else { const fn = s => a === 'prefix' ? v + s : a === 'suffix' ? s + v : (() => { if (!v) return s; try { return $('#bre')?.checked ? s.replace(new RegExp(v, 'g'), v2) : s.split(v).join(v2); } catch { return s; } })();
+      if (!(p.kind === 'component' && p.referenced)) setPartName(pid, fn(curName(pid))); if (p.kind !== 'root') p.bodies.forEach((_, k) => setBody(pid, k, 'name', fn(cur(pid, k, 'name')))); n++; } }
+  renderRows(); if (skipped) alert(`${skipped} linked part${skipped > 1 ? 's were' : ' was'} skipped. Tick "Unlock linked" to include them.`);
+};
+
+/* ---------- answers ---------- */
+function answers() {
+  const edits = [];
+  for (const p of changedParts()) {
+    const e = { part: p.id, kind: p.kind, linked: p.referenced, paths: p.paths.slice(0, 400), partName: p.name };
+    if (E[p.id]?.name) e.rename = { from: p.name, to: E[p.id].name };
+    const bodies = [];
+    p.bodies.forEach((b, k) => { const be = E[bk(p.id, k)]; if (!be) return; const o = { index: k, bodyName: b.name, was: {}, set: {} };
+      for (const [f, v] of Object.entries(be)) { o.set[f] = v; if (f !== 'customColor') o.was[f] = b[f] ?? null; } bodies.push(o); });
+    if (bodies.length) e.bodies = bodies; edits.push(e);
+  }
+  return { format: 'fusion-parts-answers/1', document: A.document.name, exportedAt: A.exportedAt, allowLinked: unlocked && edits.some(e => e.linked), edits };
+}
+$('#copy').onclick = async () => {
+  const j = JSON.stringify(answers(), null, 1);
+  try { await navigator.clipboard.writeText(j); $('#copy').textContent = 'Copied ✓'; setTimeout(() => $('#copy').textContent = 'Copy answers', 1800); }
+  catch { $('#modalText').value = j; $('#modal').hidden = false; $('#modalText').select(); }
+};
+$('#modalClose').onclick = () => $('#modal').hidden = true;
+$('#download').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(answers(), null, 1)], { type: 'application/json' })); a.download = 'parts-answers.json'; a.click(); };
+$('#reset').onclick = () => { if (!Object.keys(E).length || confirm('Throw away all your edits?')) { E = {}; sel.clear(); save(); renderRows(); } };
+
+/* theme */
+const tb = $('#b-theme'), root = document.documentElement;
+const state = () => root.getAttribute('data-theme') || 'auto';
+const showTheme = () => { const s = state(); tb.textContent = s === 'light' ? '☀ Light' : s === 'dark' ? '☾ Dark' : '◐ Auto'; };
+tb.onclick = () => { const o = ['auto', 'light', 'dark'], n = o[(o.indexOf(state()) + 1) % 3]; n === 'auto' ? root.removeAttribute('data-theme') : root.setAttribute('data-theme', n); try { n === 'auto' ? localStorage.removeItem('fpe-theme') : localStorage.setItem('fpe-theme', n); } catch {} showTheme(); };
+showTheme();
+
+/* ---------- go ---------- */
+function resize() { const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); cvs.style.width = '100%'; cvs.style.height = '100%'; camera.aspect = w / h; camera.updateProjectionMatrix(); }
+new ResizeObserver(resize).observe(stage); resize();
+renderRows();
+(function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+</script>
+</body>
+</html>

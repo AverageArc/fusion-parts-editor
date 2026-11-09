@@ -1,0 +1,13 @@
+{
+  "name": "fusion-parts-editor",
+  "version": "0.1.0",
+  "description": "A Claude skill: clean up the names, materials and colors of a Fusion 360 assembly in a visual scratchpad, then apply the changes to the open design.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tools/smoke-test.mjs",
+    "sample": "node tools/make-sample.mjs && node fusion-parts-editor/scripts/build_editor.mjs examples/sample-export examples/sample-export/parts-editor.html",
+    "install-skill": "node tools/install.mjs"
+  },
+  "engines": { "node": ">=18" }
+}
