@@ -123,4 +123,4 @@ runs a smoke test: it builds the page from the sample export and checks the outp
 
 Autodesk and Fusion are trademarks of Autodesk, Inc. This project is not affiliated with or endorsed by Autodesk or Anthropic.
 
-License: not chosen yet. Add a `LICENSE` file before publishing.
+License: [Apache License 2.0](LICENSE).

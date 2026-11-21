@@ -2,6 +2,7 @@
   "name": "fusion-parts-editor",
   "version": "0.1.0",
   "description": "A Claude skill: clean up the names, materials and colors of a Fusion 360 assembly in a visual scratchpad, then apply the changes to the open design.",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "scripts": {
